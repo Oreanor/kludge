@@ -1,0 +1,80 @@
+{
+  "name": "air",
+  "displayName": "AIR",
+  "description": "AI React multiagent extension",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.116.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "air.helloWorld",
+        "title": "Hello World"
+      },
+      {
+        "command": "air.testStream",
+        "title": "AIR: Test Stream"
+      },
+      {
+        "command": "air.openChat",
+        "title": "AIR: Open Chat"
+      },
+      {
+        "command": "air.sendMessage",
+        "title": "AIR: Send Message"
+      },
+      { "command": "air.openPreview",   "title": "AIR: Open Preview",    "icon": "$(browser)" },
+      { "command": "air.reloadPreview", "title": "AIR: Reload Preview",  "icon": "$(refresh)" },
+      { "command": "air.pickElement",   "title": "AIR: Pick Element",    "icon": "$(inspect)" }
+    ],
+    "views": {
+      "explorer": [
+        {
+          "type": "webview",
+          "id": "air.chatView",
+          "name": "AIR Chat",
+          "icon": "$(comment-discussion)"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "build": "npm run build:ext && npm run build:webview",
+    "build:ext": "node esbuild.config.mjs",
+    "build:webview": "vite build",
+    "watch": "npm run build:ext -- --watch",
+    "compile": "npm run build:ext",
+    "lint": "eslint src webview/src",
+    "pretest": "npm run compile && npm run lint",
+    "test": "vscode-test",
+    "vscode:prepublish": "npm run build"
+  },
+  "devDependencies": {
+    "@types/mocha": "^10.0.10",
+    "@types/node": "22.x",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@types/vscode": "^1.116.0",
+    "@vitejs/plugin-react": "^6.0.1",
+    "@vscode/test-cli": "^0.0.12",
+    "@vscode/test-electron": "^2.5.2",
+    "esbuild": "^0.28.0",
+    "eslint": "^9.39.3",
+    "react": "^19.2.5",
+    "react-dom": "^19.2.5",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.56.1",
+    "vite": "^8.0.9"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.90.0",
+    "@google/generative-ai": "^0.24.1",
+    "dotenv": "^17.4.2",
+    "ollama": "^0.6.3"
+  }
+}
