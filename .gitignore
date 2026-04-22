@@ -1,6 +1,19 @@
-out
-dist
-docs
-node_modules
+node_modules/
+dist/
+out/
+
+.env
+.env.local
+.env.*.local
+
+# VS Code
 .vscode-test/
 *.vsix
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*

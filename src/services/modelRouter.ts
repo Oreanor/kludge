@@ -1,26 +1,26 @@
-import { ModelRouter, RouteDecision, TaskKind, ChatContext, ModelConfig } from '../types';
+import { GEMINI_MODELS } from '../providers/GeminiProvider';
+import { GROQ_MODELS } from '../providers/GroqProvider';
 
-export class ModelRouterService implements ModelRouter {
-  private models: Record<string, ModelConfig> = {};
+export const ALL_MODELS = [
+  ...GEMINI_MODELS,
+  ...GROQ_MODELS,
+];
 
-  registerModels(configs: ModelConfig[] = []) {
-    configs.forEach(c => { this.models[c.id] = c; });
-  }
+export type ModelProvider = 'gemini' | 'groq';
 
-  route(task: TaskKind, context: ChatContext): RouteDecision {
-    const ids = Object.keys(this.models);
-    return {
-      modelId: ids[0] ?? 'default',
-      reason: 'default-route'
-    };
-  }
+export interface ModelDescriptor {
+  id: string;
+  label: string;
+  provider: ModelProvider;
+}
 
-  chooseFallback(primary: string, error?: any): string | undefined {
-    const ids = Object.keys(this.models).filter(id => id !== primary);
-    return ids[0];
-  }
+export function getModelDescriptor(modelId: string): ModelDescriptor | undefined {
+  return ALL_MODELS.find(m => m.id === modelId);
+}
 
-  async showModelPicker(): Promise<string | undefined> {
-    return undefined;
-  }
+/** Returns the best available model given which providers are initialised. */
+export function resolveAutoModel(available: Set<ModelProvider>): string {
+  if (available.has('groq'))   { return 'llama-3.3-70b-versatile'; }
+  if (available.has('gemini')) { return 'gemini-2.0-flash'; }
+  return 'echo';
 }

@@ -2,24 +2,72 @@ import * as vscode from 'vscode';
 import * as dotenv from 'dotenv';
 import * as path from 'path';
 
-// Загружаем переменные окружения из .env файла
 dotenv.config({ path: path.join(__dirname, '..', '.env') });
 
 import { ChatProvider } from './chatProvider';
-import { ChatOrchestrator, HistoryService, TelegramService } from './services';
+import { ChatOrchestrator, HistoryService, TelegramService, PreviewPanel } from './services';
 import { ChatRequest } from './types';
-import { PreviewPanel } from './services';
 
-export function activate(context: vscode.ExtensionContext) {
+async function listWorkspaceFiles(): Promise<string[]> {
+  const folders = vscode.workspace.workspaceFolders;
+  if (!folders?.length) { return []; }
+
+  const files: string[] = [];
+
+  for (const folder of folders) {
+    const entries = await vscode.workspace.findFiles(
+      new vscode.RelativePattern(folder, '**/*'),
+      '**/{node_modules,.git,dist,out,build,.next}/**',
+      200
+    );
+    for (const uri of entries) {
+      files.push(vscode.workspace.asRelativePath(uri, false));
+    }
+  }
+
+  return files;
+}
+
+function buildRequestContext(
+  taskKind: 'chat' | 'edit' | 'preview' | 'icons' | 'image' | 'search' | 'agent',
+  extra: Record<string, any> = {}
+) {
+  const activeEditor = vscode.window.activeTextEditor;
+  return {
+    taskKind,
+    workspaceFiles: extra.workspaceFiles ?? [],
+    activeFile: extra.activeFile ?? activeEditor?.document.fileName,
+    activeFileContent: extra.activeFileContent ?? activeEditor?.document.getText() ?? '',
+    ...extra,
+  };
+}
+
+export async function activate(context: vscode.ExtensionContext) {
   const historyService = new HistoryService(context.globalState);
   const orchestrator = new ChatOrchestrator(historyService);
-
   const provider = new ChatProvider(context.extensionUri, orchestrator);
-
   const preview = new PreviewPanel();
 
-  // подписываем агента на ошибки из preview
+  // ── инициализируем провайдеры из .env ────────────────────────────────
+  const geminiKey = process.env.GEMINI_API_KEY;
+  const groqKey   = process.env.GROQ_API_KEY;
+
+  if (geminiKey) {
+    orchestrator.setGeminiKey(geminiKey);
+    console.log('[air] Gemini provider initialized');
+  }
+  if (groqKey) {
+    orchestrator.setGroqKey(groqKey);
+    console.log('[air] Groq provider initialized');
+  }
+  if (!geminiKey && !groqKey) {
+    console.warn('[air] No API keys found — running in echo mode');
+    vscode.window.showWarningMessage('AIR: не найдены ключи GEMINI_API_KEY / GROQ_API_KEY в .env');
+  }
+
+  // ── подписка на ошибки из preview → авто-фикс через AI ───────────────
   preview.subscribeToErrors(async (errorMsg, stack) => {
+    const workspaceFiles = await listWorkspaceFiles();
     const request: ChatRequest = {
       conversationId: 'preview-autofix',
       messages: [{
@@ -28,7 +76,7 @@ export function activate(context: vscode.ExtensionContext) {
         content: `Runtime ошибка в приложении:\n${errorMsg}\n\nStack: ${stack}\n\nПредложи фикс.`,
         createdAt: Date.now()
       }],
-      context: { taskKind: 'agent' },
+      context: buildRequestContext('agent', { workspaceFiles }),
       modelId: 'default'
     };
 
@@ -40,51 +88,22 @@ export function activate(context: vscode.ExtensionContext) {
     provider.postMessage({ type: 'done', conversationId: 'preview-autofix' });
   });
 
+  // ── element picker из preview → чип в инпуте webview ────────────────
   preview.subscribeToElementPicks(async (info) => {
-    const summary = `Picked element: \`${info.selector}\`\n` +
-      `Size: ${info.rect.width}×${info.rect.height}\n` +
-      `Font: ${info.styles.fontSize} ${info.styles.fontWeight}\n` +
-      `Color: ${info.styles.color}\n` +
-      `Background: ${info.styles.background}`
-
-    provider.postMessage({
-      type: 'user-message',
-      text: summary,
-      from: 'Preview Picker',
-      conversationId: 'preview',
-    })
-
-    // и сразу спрашиваем агента что с этим сделать
-    const request: ChatRequest = {
-      conversationId: 'preview',
-      messages: [{
-        id: `pick-${Date.now()}`,
-        role: 'user',
-        content: `Пользователь выбрал элемент в preview:\n${summary}\n\nЧто можно улучшить?`,
-        createdAt: Date.now(),
-      }],
-      context: { taskKind: 'agent' },
-      modelId: 'default',
-    }
-
-    provider.postMessage({ type: 'stream-start', conversationId: 'preview' })
-    await orchestrator.streamChatResponse(request, delta => {
-      provider.postMessage({ type: 'delta', delta, conversationId: 'preview' })
-    })
-    provider.postMessage({ type: 'done', conversationId: 'preview' })
+    await provider.postMessageWhenReady({ type: 'picked-element', data: info });
+    provider.postMessage({ type: 'picker-done' });
   });
 
-  // команды
   context.subscriptions.push(
     vscode.commands.registerCommand('air.openPreview', () => preview.open()),
+    vscode.commands.registerCommand('air.openPreviewAt', (url: string) => preview.open(url)),
     vscode.commands.registerCommand('air.reloadPreview', () => preview.reload()),
     vscode.commands.registerCommand('air.pickElement', () => preview.startElementPicker()),
-
-    // автоперезагрузка при сохранении файла
+    vscode.commands.registerCommand('air.stopPicker', () => preview.stopElementPicker()),
     vscode.workspace.onDidSaveTextDocument(() => preview.reload())
   );
 
-    // --- Инициализация Telegram ---
+  // ── Telegram ──────────────────────────────────────────────────────────
   const tgToken = process.env.TELEGRAM_BOT_TOKEN;
   const tgChatId = process.env.TELEGRAM_CHAT_ID;
 
@@ -92,42 +111,44 @@ export function activate(context: vscode.ExtensionContext) {
     const telegram = new TelegramService(tgToken, tgChatId);
 
     telegram.startPolling(async (text, from) => {
-    const request: ChatRequest = {
-      conversationId: `tg-${tgChatId}`,
-      messages: [
-        { id: `tg-${Date.now()}`, role: 'user', content: text, createdAt: Date.now() }
-      ],
-      context: orchestrator.buildChatContext(),
-      modelId: 'default'
-    };
+      const workspaceFiles = await listWorkspaceFiles();
 
-    // ← вот это добавь: сначала показываем user реплику в UI
-    provider.postMessage({
-      type: 'user-message',
-      text,
-      from,
-      conversationId: request.conversationId
+      const request: ChatRequest = {
+        conversationId: `tg-${tgChatId}`,
+        messages: [
+          { id: `tg-${Date.now()}`, role: 'user', content: text, createdAt: Date.now() }
+        ],
+        context: buildRequestContext('chat', { workspaceFiles }),
+        modelId: 'default'
+      };
+
+      provider.postMessage({
+        type: 'user-message',
+        text,
+        from,
+        conversationId: request.conversationId
+      });
+
+      let fullResponse = '';
+
+      provider.postMessage({ type: 'stream-start', conversationId: request.conversationId });
+
+      await orchestrator.streamChatResponse(request, (delta) => {
+        fullResponse += delta;
+        provider.postMessage({ type: 'delta', delta, conversationId: request.conversationId });
+      });
+
+      provider.postMessage({ type: 'done', conversationId: request.conversationId });
+
+      if (fullResponse) {
+        await telegram.send(fullResponse).catch(e => console.error('[air] Telegram send error:', e));
+      }
     });
-
-    let fullResponse = '';
-
-    provider.postMessage({ type: 'stream-start', conversationId: request.conversationId });
-
-    await orchestrator.streamChatResponse(request, (delta) => {
-      fullResponse += delta;
-      provider.postMessage({ type: 'delta', delta, conversationId: request.conversationId });
-    });
-
-    provider.postMessage({ type: 'done', conversationId: request.conversationId });
-
-    if (fullResponse) {
-      await telegram.send(fullResponse);
-    }
-  });
 
     context.subscriptions.push({ dispose: () => telegram.stopPolling() });
+    console.log('[air] Telegram polling started');
   }
-  // ------------------------------
+
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(
       ChatProvider.viewId,
@@ -135,6 +156,7 @@ export function activate(context: vscode.ExtensionContext) {
     )
   );
 
+  // ── dev-команды ───────────────────────────────────────────────────────
   context.subscriptions.push(
     vscode.commands.registerCommand('air.helloWorld', () => {
       vscode.window.showInformationMessage('AIR is running!');
@@ -144,15 +166,13 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.commands.registerCommand('air.testStream', async () => {
       vscode.window.showInformationMessage('AIR: test stream started');
+      const workspaceFiles = await listWorkspaceFiles();
       const request: ChatRequest = {
         conversationId: 'test',
-        messages: [
-          { id: '1', role: 'user', content: 'Hello from test stream', createdAt: Date.now() }
-        ],
-        context: { taskKind: 'chat' },
+        messages: [{ id: '1', role: 'user', content: 'Hello from test stream', createdAt: Date.now() }],
+        context: buildRequestContext('chat', { workspaceFiles }),
         modelId: 'default'
       };
-
       await orchestrator.streamChatResponse(request, (delta) => {
         provider.postMessage({ type: 'delta', delta });
       });
@@ -161,50 +181,33 @@ export function activate(context: vscode.ExtensionContext) {
     })
   );
 
-  // open chat in Explorer (user-visible view)
   context.subscriptions.push(
     vscode.commands.registerCommand('air.openChat', async () => {
-      // try to reveal Explorer where the WebviewView is registered
       await vscode.commands.executeCommand('workbench.view.explorer');
-      vscode.window.showInformationMessage('AIR: Opened Explorer — please expand "AIR Chat" view to see the chat panel.');
+      vscode.window.showInformationMessage('AIR: Opened Explorer — please expand "AIR Chat" view.');
     })
   );
 
-  // send a message programmatically to a conversation
   context.subscriptions.push(
     vscode.commands.registerCommand('air.sendMessage', async () => {
       const convId = await vscode.window.showInputBox({ prompt: 'Conversation ID', value: 'default' });
-      if (convId === undefined) {return;}
+      if (convId === undefined) { return; }
       const text = await vscode.window.showInputBox({ prompt: 'Message text' });
-      if (!text) {return;}
+      if (!text) { return; }
 
+      const workspaceFiles = await listWorkspaceFiles();
       const request: ChatRequest = {
         conversationId: convId,
-        messages: [
-          { id: `user-${Date.now()}`, role: 'user', content: text, createdAt: Date.now() }
-        ],
-        context: { taskKind: 'chat' },
+        messages: [{ id: `user-${Date.now()}`, role: 'user', content: text, createdAt: Date.now() }],
+        context: buildRequestContext('chat', { workspaceFiles }),
         modelId: 'default'
       };
 
-      vscode.window.showInformationMessage(`AIR: sending message to "${convId}"`);
+      provider.postMessage({ type: 'stream-start', conversationId: convId });
       await orchestrator.streamChatResponse(request, (delta) => {
         provider.postMessage({ type: 'delta', delta });
       });
       provider.postMessage({ type: 'done', conversationId: convId });
-
-      // post final assembled assistant response (UI expects 'response')
-      try {
-        const hist = orchestrator.getHistory(convId);
-        if (Array.isArray(hist)) {
-          const lastAssistant = [...hist].reverse().find((m: any) => m.role === 'assistant');
-          if (lastAssistant) {
-            provider.postMessage({ type: 'response', text: lastAssistant.content, conversationId: convId });
-          }
-        }
-      } catch (e) {
-        // ignore
-      }
     })
   );
 }

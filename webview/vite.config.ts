@@ -10,4 +10,4 @@ export default defineConfig({
       input: 'webview/index.html',
     },
   },
-})
+});

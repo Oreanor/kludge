@@ -12,25 +12,15 @@
   "main": "./dist/extension.js",
   "contributes": {
     "commands": [
-      {
-        "command": "air.helloWorld",
-        "title": "Hello World"
-      },
-      {
-        "command": "air.testStream",
-        "title": "AIR: Test Stream"
-      },
-      {
-        "command": "air.openChat",
-        "title": "AIR: Open Chat"
-      },
-      {
-        "command": "air.sendMessage",
-        "title": "AIR: Send Message"
-      },
-      { "command": "air.openPreview",   "title": "AIR: Open Preview",    "icon": "$(browser)" },
-      { "command": "air.reloadPreview", "title": "AIR: Reload Preview",  "icon": "$(refresh)" },
-      { "command": "air.pickElement",   "title": "AIR: Pick Element",    "icon": "$(inspect)" }
+      { "command": "air.helloWorld",        "title": "Hello World" },
+      { "command": "air.testStream",        "title": "AIR: Test Stream" },
+      { "command": "air.openChat",          "title": "AIR: Open Chat" },
+      { "command": "air.sendMessage",       "title": "AIR: Send Message" },
+      { "command": "air.openPreview",       "title": "AIR: Open Preview",   "icon": "$(browser)" },
+      { "command": "air.reloadPreview",     "title": "AIR: Reload Preview", "icon": "$(refresh)" },
+      { "command": "air.pickElement",       "title": "AIR: Pick Element",   "icon": "$(inspect)" },
+      { "command": "air.setAnthropicKey",   "title": "AIR: Set Anthropic API Key" },
+      { "command": "air.clearAnthropicKey", "title": "AIR: Clear Anthropic API Key" }
     ],
     "views": {
       "explorer": [

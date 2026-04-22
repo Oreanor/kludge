@@ -52,6 +52,7 @@ export interface ChatMessage {
 export interface ChatContext {
   selectedText?: string;
   activeFile?: string;
+  activeFileContent?: string;
   workspaceFiles?: string[];
   symbols?: string[];
   taskKind: TaskKind;
@@ -131,4 +132,17 @@ export interface AgentTask {
   role: AgentRole;
   input: string;
   status: 'queued' | 'running' | 'done' | 'failed';
+}
+
+/**
+ * Состояние разговора: минимальный контекст для API.
+ * - summary: краткое резюме всей предыдущей переписки
+ * - lastUserMessage: только последнее сообщение пользователя
+ * - fileCache: файлы хранятся отдельно, НЕ в истории; ключ = путь к файлу
+ */
+export interface ConversationState {
+  summary: string;
+  lastUserMessage: ChatMessage | null;
+  /** path → content, загружается по запросу, не шлётся в API автоматически */
+  fileCache: Record<string, string>;
 }
