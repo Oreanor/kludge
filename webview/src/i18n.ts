@@ -6,6 +6,9 @@ export interface I18n {
   btnAdd: string
   btnCommit: string
   btnPush: string
+  btnInit: string
+  btnResetPrev: string
+  btnResetRemote: string
   modelLabel: string
   modelAuto: string
   branchNew: string
@@ -18,6 +21,9 @@ export interface I18n {
   msgGitAdded: string
   msgGitCommitted: (msg?: string) => string
   msgGitPushed: (msg?: string) => string
+  msgGitInited: string
+  msgGitResetPrev: string
+  msgGitResetRemote: string
   msgGitError: (err: string) => string
   msgNpmStarted: (cmd: string) => string
   msgDevWaiting: (ports: string) => string
@@ -52,13 +58,18 @@ export interface I18n {
   calendarToggle: string
   calendarNoTasks: string
   calendarWeekdays: string[]
+  providersToggle: string
+  providerSave: string
+  providerRemove: string
+  providerRestore: string
+  providerPlaceholder: string
 }
 
 const en: I18n = {
   btnSend: 'Send',
   btnStop: '⏹ Stop',
-  btnPreview: '⬡ Preview',
-  btnClear: '✕ Clear',
+  btnPreview: '⬡ App preview',
+  btnClear: '✕ Clear chat',
   btnAdd: '＋ Add',
   btnCommit: '✓ Commit',
   btnPush: '⬆ Push',
@@ -71,9 +82,15 @@ const en: I18n = {
   placeholder: 'Write a message…',
   placeholderStreaming: 'Generating… press Stop to edit',
   msgGitProgress: op => ({ add: '⏳ Running `git add -A`…', commit: '⏳ Running add + commit…', push: '⏳ Running add + commit + push…' }[op]),
+  btnInit: '⚙ Init',
+  btnResetPrev: '↩ Prev',
+  btnResetRemote: '⬇ Remote',
   msgGitAdded: '✓ Staged all changes (`git add -A`)',
   msgGitCommitted: msg => msg ? `✓ Committed: "${msg}"` : '✓ Committed',
   msgGitPushed: msg => msg ? `✓ Committed "${msg}" and pushed to remote` : '✓ Pushed to remote',
+  msgGitInited: '✓ Git repository initialized',
+  msgGitResetPrev: '↩ Rolled back to previous commit',
+  msgGitResetRemote: '⬇ Reset to remote state',
   msgGitError: err => `⚠ Git: ${err}`,
   msgNpmStarted: cmd => `▶ Running \`${cmd}\`…`,
   msgDevWaiting: ports => `🚀 Started \`npm run dev\`, waiting for server… (ports: ${ports})`,
@@ -108,21 +125,29 @@ const en: I18n = {
   calendarToggle: '📅 Schedule',
   calendarNoTasks: 'No tasks for this day',
   calendarWeekdays: ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'],
+  providersToggle: '🔑 Keys',
+  providerSave: 'Save',
+  providerRemove: 'Remove',
+  providerRestore: '↩ Restore',
+  providerPlaceholder: 'Paste API key…',
 }
 
 const ru: I18n = {
   btnSend: 'Отправить',
   btnStop: '⏹ Стоп',
-  btnPreview: '⬡ Превью',
-  btnClear: '✕ Очистить',
+  btnPreview: '⬡ Превью приложения',
+  btnClear: '✕ Очистить разговор',
   btnAdd: '＋ Add',
   btnCommit: '✓ Commit',
   btnPush: '⬆ Push',
+  btnInit: '⚙ Init',
+  btnResetPrev: '↩ Откат',
+  btnResetRemote: '⬇ Remote',
   modelLabel: 'Модель',
   modelAuto: '⚡ Авто',
   branchNew: '＋ Новая ветка…',
   branchPlaceholder: 'имя ветки',
-  emptyTitle: 'Kludge Code готов к работе',
+  emptyTitle: 'Kludge Code готовп к работе',
   emptyHint: 'Enter — отправить · Shift+Enter — перенос строки',
   placeholder: 'Напиши сообщение…',
   placeholderStreaming: 'Генерация… нажми Стоп чтобы изменить запрос',
@@ -130,6 +155,9 @@ const ru: I18n = {
   msgGitAdded: '✓ Добавил все изменения в индекс (`git add -A`)',
   msgGitCommitted: msg => msg ? `✓ Закоммитил: «${msg}»` : '✓ Закоммитил',
   msgGitPushed: msg => msg ? `✓ Закоммитил «${msg}» и запушил на remote` : '✓ Запушил на remote',
+  msgGitInited: '✓ Git-репозиторий инициализирован',
+  msgGitResetPrev: '↩ Откатился до предыдущего коммита',
+  msgGitResetRemote: '⬇ Сброшено до состояния remote',
   msgGitError: err => `⚠ Git: ${err}`,
   msgNpmStarted: cmd => `▶ Запускаю \`${cmd}\`…`,
   msgDevWaiting: ports => `🚀 Запустил \`npm run dev\`, жду сервер… (порты: ${ports})`,
@@ -164,16 +192,24 @@ const ru: I18n = {
   calendarToggle: '📅 Расписание',
   calendarNoTasks: 'Задач нет',
   calendarWeekdays: ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'],
+  providersToggle: '🔑 Ключи',
+  providerSave: 'Сохранить',
+  providerRemove: 'Убрать',
+  providerRestore: '↩ Вернуть',
+  providerPlaceholder: 'Вставь API-ключ…',
 }
 
 const pt: I18n = {
   btnSend: 'Enviar',
   btnStop: '⏹ Parar',
-  btnPreview: '⬡ Preview',
-  btnClear: '✕ Limpar',
+  btnPreview: '⬡ Prévia do app',
+  btnClear: '✕ Limpar conversa',
   btnAdd: '＋ Add',
   btnCommit: '✓ Commit',
   btnPush: '⬆ Push',
+  btnInit: '⚙ Init',
+  btnResetPrev: '↩ Anterior',
+  btnResetRemote: '⬇ Remote',
   modelLabel: 'Modelo',
   modelAuto: '⚡ Auto',
   branchNew: '＋ Nova branch…',
@@ -186,6 +222,9 @@ const pt: I18n = {
   msgGitAdded: '✓ Todas as alterações adicionadas (`git add -A`)',
   msgGitCommitted: msg => msg ? `✓ Commit: "${msg}"` : '✓ Commit realizado',
   msgGitPushed: msg => msg ? `✓ Commit "${msg}" e push realizado` : '✓ Push realizado',
+  msgGitInited: '✓ Repositório Git inicializado',
+  msgGitResetPrev: '↩ Revertido ao commit anterior',
+  msgGitResetRemote: '⬇ Redefinido para o estado remoto',
   msgGitError: err => `⚠ Git: ${err}`,
   msgNpmStarted: cmd => `▶ Executando \`${cmd}\`…`,
   msgDevWaiting: ports => `🚀 \`npm run dev\` iniciado, aguardando servidor… (portas: ${ports})`,
@@ -220,6 +259,11 @@ const pt: I18n = {
   calendarToggle: '📅 Agenda',
   calendarNoTasks: 'Sem tarefas neste dia',
   calendarWeekdays: ['Se', 'Te', 'Qu', 'Qu', 'Se', 'Sá', 'Do'],
+  providersToggle: '🔑 Chaves',
+  providerSave: 'Salvar',
+  providerRemove: 'Remover',
+  providerRestore: '↩ Restaurar',
+  providerPlaceholder: 'Cole a chave API…',
 }
 
 export function getStrings(locale: string): I18n {

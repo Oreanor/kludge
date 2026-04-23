@@ -5,6 +5,12 @@ import { ChatRequest, ChatMessage } from '../types';
 import { HistoryService } from './history';
 import { GeminiProvider } from '../providers/GeminiProvider';
 import { GroqProvider } from '../providers/GroqProvider';
+import { OpenRouterProvider } from '../providers/OpenRouterProvider';
+import { AnthropicChatProvider } from '../providers/AnthropicChatProvider';
+import { DeepSeekProvider } from '../providers/DeepSeekProvider';
+import { MistralProvider } from '../providers/MistralProvider';
+import { OpenAIProvider } from '../providers/OpenAIProvider';
+import { OllamaProvider } from '../providers/OllamaProvider';
 import { ALL_MODELS, ModelProvider, getModelDescriptor, resolveAutoModel } from './modelRouter';
 
 type ApiMsg = { role: 'user' | 'assistant'; content: string };
@@ -15,6 +21,13 @@ const TOTAL_FILES_LIMIT = 40_000; // chars across all requested files
 export class ChatOrchestrator {
   private gemini?: GeminiProvider;
   private groq?: GroqProvider;
+  private openrouter?: OpenRouterProvider;
+  private anthropic?: AnthropicChatProvider;
+  private deepseek?: DeepSeekProvider;
+  private mistral?: MistralProvider;
+  private openai?: OpenAIProvider;
+  private ollama?: OllamaProvider;
+  private ollamaModels: Array<{ id: string; label: string; provider: ModelProvider }> = [];
   private availableProviders = new Set<ModelProvider>();
 
   constructor(private readonly history?: HistoryService) {}
@@ -29,8 +42,53 @@ export class ChatOrchestrator {
     this.availableProviders.add('groq');
   }
 
+  setOpenRouterKey(apiKey: string) {
+    this.openrouter = new OpenRouterProvider(apiKey);
+    this.availableProviders.add('openrouter');
+  }
+
+  setAnthropicKey(apiKey: string) {
+    this.anthropic = new AnthropicChatProvider(apiKey);
+    this.availableProviders.add('anthropic');
+  }
+
+  setDeepSeekKey(apiKey: string) {
+    this.deepseek = new DeepSeekProvider(apiKey);
+    this.availableProviders.add('deepseek');
+  }
+
+  setMistralKey(apiKey: string) {
+    this.mistral = new MistralProvider(apiKey);
+    this.availableProviders.add('mistral');
+  }
+
+  setOpenAIKey(apiKey: string) {
+    this.openai = new OpenAIProvider(apiKey);
+    this.availableProviders.add('openai');
+  }
+
+  async setOllamaUrl(url: string): Promise<void> {
+    this.ollama = new OllamaProvider(url);
+    this.availableProviders.add('ollama');
+    this.ollamaModels = await this.ollama.fetchModels();
+  }
+
+  removeProvider(id: ModelProvider) {
+    if (id === 'gemini')     { this.gemini     = undefined; this.availableProviders.delete('gemini'); }
+    if (id === 'groq')       { this.groq       = undefined; this.availableProviders.delete('groq'); }
+    if (id === 'openrouter') { this.openrouter = undefined; this.availableProviders.delete('openrouter'); }
+    if (id === 'anthropic')  { this.anthropic  = undefined; this.availableProviders.delete('anthropic'); }
+    if (id === 'deepseek')   { this.deepseek   = undefined; this.availableProviders.delete('deepseek'); }
+    if (id === 'mistral')    { this.mistral    = undefined; this.availableProviders.delete('mistral'); }
+    if (id === 'openai')     { this.openai     = undefined; this.availableProviders.delete('openai'); }
+    if (id === 'ollama')     { this.ollama     = undefined; this.ollamaModels = []; this.availableProviders.delete('ollama'); }
+  }
+
   getAvailableModels() {
-    return ALL_MODELS.filter(m => this.availableProviders.has(m.provider));
+    return [
+      ...ALL_MODELS.filter(m => this.availableProviders.has(m.provider)),
+      ...this.ollamaModels,
+    ];
   }
 
   getHistory(conversationId: string): ChatMessage[] {
@@ -102,10 +160,10 @@ export class ChatOrchestrator {
     const apiMessages: ApiMsg[] = [];
 
     if (this.history) {
-      const state = this.history.getState(convId);
-      if (state.summary) {
-        apiMessages.push({ role: 'user',      content: `[Контекст предыдущего разговора]\n${state.summary}` });
-        apiMessages.push({ role: 'assistant', content: 'Понял контекст, продолжаю.' });
+      const { turns } = this.history.getState(convId);
+      for (const turn of turns) {
+        apiMessages.push({ role: 'user',      content: turn.user });
+        apiMessages.push({ role: 'assistant', content: turn.assistant });
       }
     }
 
@@ -126,7 +184,7 @@ export class ChatOrchestrator {
     console.log(`[Kludge] Using model: ${modelId} (${provider ?? 'unknown'})`);
 
     // ── echo fallback ────────────────────────────────────────────────────────
-    if (!provider || (!this.gemini && !this.groq)) {
+    if (!provider || (!this.gemini && !this.groq && !this.openrouter && !this.anthropic && !this.deepseek && !this.mistral && !this.openai && !this.ollama)) {
       const assembled = `[Echo — нет доступных провайдеров] ${userMsg?.content ?? ''}`;
       for (const chunk of assembled.split(/(\s+)/)) {
         if (signal?.aborted) { return; }
@@ -267,12 +325,14 @@ export class ChatOrchestrator {
     provider: string,
     systemPrompt: string,
   ): AsyncIterable<string> | null {
-    if (provider === 'gemini' && this.gemini) {
-      return this.gemini.stream(messages, modelId, systemPrompt);
-    }
-    if (provider === 'groq' && this.groq) {
-      return this.groq.stream(messages, modelId, systemPrompt);
-    }
+    if (provider === 'gemini'     && this.gemini)     { return this.gemini.stream(messages, modelId, systemPrompt); }
+    if (provider === 'groq'       && this.groq)       { return this.groq.stream(messages, modelId, systemPrompt); }
+    if (provider === 'openrouter' && this.openrouter) { return this.openrouter.stream(messages, modelId, systemPrompt); }
+    if (provider === 'anthropic'  && this.anthropic)  { return this.anthropic.stream(messages, modelId, systemPrompt); }
+    if (provider === 'deepseek'   && this.deepseek)   { return this.deepseek.stream(messages, modelId, systemPrompt); }
+    if (provider === 'mistral'    && this.mistral)    { return this.mistral.stream(messages, modelId, systemPrompt); }
+    if (provider === 'openai'     && this.openai)     { return this.openai.stream(messages, modelId, systemPrompt); }
+    if (provider === 'ollama'     && this.ollama)     { return this.ollama.stream(messages, modelId, systemPrompt); }
     return null;
   }
 

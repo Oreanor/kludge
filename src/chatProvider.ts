@@ -56,6 +56,17 @@ interface ScheduledTask {
 
 const SCHEDULE_KEY = 'kludge.scheduledPrompts';
 
+const PROVIDER_DEFS = [
+  { id: 'gemini'     as const, name: 'Google Gemini', secretKey: 'kludge.provider.gemini'      },
+  { id: 'groq'       as const, name: 'Groq',          secretKey: 'kludge.provider.groq'        },
+  { id: 'openrouter' as const, name: 'OpenRouter',    secretKey: 'kludge.provider.openrouter'  },
+  { id: 'anthropic'  as const, name: 'Anthropic',     secretKey: 'kludge.provider.anthropic'   },
+  { id: 'deepseek'   as const, name: 'DeepSeek',      secretKey: 'kludge.provider.deepseek'    },
+  { id: 'mistral'    as const, name: 'Mistral',       secretKey: 'kludge.provider.mistral'     },
+  { id: 'openai'     as const, name: 'OpenAI',        secretKey: 'kludge.provider.openai'      },
+  { id: 'ollama'     as const, name: 'Ollama (local)', secretKey: 'kludge.provider.ollama', placeholder: 'http://localhost:11434' },
+];
+
 export class ChatProvider implements vscode.WebviewViewProvider {
   public static readonly viewId = 'kludge.chatView';
   private _view?: vscode.WebviewView;
@@ -66,10 +77,12 @@ export class ChatProvider implements vscode.WebviewViewProvider {
   private _isReady = false;
   private _git?: GitService;
   private _npm?: NpmService;
+  private _softRemoved = new Set<string>(); // visually removed but key still in SecretStorage
 
   constructor(
     private readonly _extensionUri: vscode.Uri,
     private readonly _globalState: vscode.Memento,
+    private readonly _secrets: vscode.SecretStorage,
     private readonly orchestrator?: ChatOrchestrator
   ) {}
 
@@ -102,6 +115,7 @@ export class ChatProvider implements vscode.WebviewViewProvider {
       this._sendActiveFile();
       this._sendCustomPrompts();
       this._sendScheduledTasks();
+      void this._sendProviders();
       void this._git?.sendInfo(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '');
     };
 
@@ -344,6 +358,7 @@ export class ChatProvider implements vscode.WebviewViewProvider {
     const hm = (ts: number) => new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
     const lines: string[] = [];
+
     if (pending.length > 0) {
       lines.push('Предстоящие задачи:');
       for (const t of pending) {
@@ -380,6 +395,62 @@ export class ChatProvider implements vscode.WebviewViewProvider {
       }
     }
     return files;
+  }
+
+  public async loadProviderKeys(): Promise<void> {
+    const ENV_MAP: Record<string, string | undefined> = {
+      gemini:     process.env.GEMINI_API_KEY,
+      groq:       process.env.GROQ_API_KEY,
+      openrouter: process.env.OPENROUTER_API_KEY,
+      anthropic:  process.env.ANTHROPIC_API_KEY,
+      deepseek:   process.env.DEEPSEEK_API_KEY,
+      mistral:    process.env.MISTRAL_API_KEY,
+      openai:     process.env.OPENAI_API_KEY,
+    };
+    for (const def of PROVIDER_DEFS) {
+      const stored = await this._secrets.get(def.secretKey);
+      const envKey = ENV_MAP[def.id];
+
+      // migrate from .env on first run
+      if (envKey && !stored) {
+        await this._secrets.store(def.secretKey, envKey);
+      }
+
+      const key = stored ?? envKey;
+      if (key && this.orchestrator) { await this._applyKey(def.id, key); }
+    }
+  }
+
+  private async _applyKey(id: string, key: string): Promise<void> {
+    if (!this.orchestrator) { return; }
+    if (id === 'gemini')     { this.orchestrator.setGeminiKey(key); }
+    if (id === 'groq')       { this.orchestrator.setGroqKey(key); }
+    if (id === 'openrouter') { this.orchestrator.setOpenRouterKey(key); }
+    if (id === 'anthropic')  { this.orchestrator.setAnthropicKey(key); }
+    if (id === 'deepseek')   { this.orchestrator.setDeepSeekKey(key); }
+    if (id === 'mistral')    { this.orchestrator.setMistralKey(key); }
+    if (id === 'openai')     { this.orchestrator.setOpenAIKey(key); }
+    if (id === 'ollama')     { await this.orchestrator.setOllamaUrl(key); }
+  }
+
+  private async _sendProviders(): Promise<void> {
+    if (!this._view?.visible) { return; }
+    const providers = await Promise.all(PROVIDER_DEFS.map(async def => {
+      const key = await this._secrets.get(def.secretKey);
+      const soft = this._softRemoved.has(def.id);
+      const isUrl = def.id === 'ollama';
+      const mask = (k: string) => isUrl ? k : '••••' + k.slice(-4);
+      return {
+        id:             def.id,
+        name:           def.name,
+        configured:     !!key && !soft,
+        maskedKey:      key && !soft ? mask(key) : undefined,
+        pendingRemoval: soft && !!key,
+        pendingMasked:  soft && key ? mask(key) : undefined,
+        placeholder:    (def as any).placeholder as string | undefined,
+      };
+    }));
+    this._view.webview.postMessage({ type: 'providers', providers });
   }
 
   private _sendCustomPrompts() {
@@ -476,6 +547,18 @@ export class ChatProvider implements vscode.WebviewViewProvider {
           if (folder) { await this._git?.handleCommitOrPush(msg.type === 'git-push', folder); }
           break;
 
+        case 'git-init':
+          if (folder) { await this._git?.handleInit(folder); }
+          break;
+
+        case 'git-reset-prev':
+          if (folder) { await this._git?.handleResetPrev(folder); }
+          break;
+
+        case 'git-reset-remote':
+          if (folder) { await this._git?.handleResetRemote(folder); }
+          break;
+
         case 'npm-scripts':
           this._sendNpmScripts();
           break;
@@ -502,6 +585,39 @@ export class ChatProvider implements vscode.WebviewViewProvider {
         case 'cancel-scheduled-task': {
           await this._removeTask(String(msg.id ?? ''));
           this._sendScheduledTasks();
+          break;
+        }
+
+        case 'save-provider-key': {
+          const def = PROVIDER_DEFS.find(d => d.id === String(msg.providerId ?? ''));
+          if (!def || !msg.key) { break; }
+          const key = String(msg.key);
+          await this._secrets.store(def.secretKey, key);
+          this._softRemoved.delete(def.id);
+          await this._applyKey(def.id, key);
+          await this._sendProviders();
+          this._sendModels();
+          break;
+        }
+
+        case 'remove-provider-key': {
+          const def = PROVIDER_DEFS.find(d => d.id === String(msg.providerId ?? ''));
+          if (!def) { break; }
+          this._softRemoved.add(def.id);
+          if (this.orchestrator) { this.orchestrator.removeProvider(def.id); }
+          await this._sendProviders();
+          this._sendModels();
+          break;
+        }
+
+        case 'restore-provider-key': {
+          const def = PROVIDER_DEFS.find(d => d.id === String(msg.providerId ?? ''));
+          if (!def) { break; }
+          this._softRemoved.delete(def.id);
+          const key = await this._secrets.get(def.secretKey);
+          if (key) { await this._applyKey(def.id, key); }
+          await this._sendProviders();
+          this._sendModels();
           break;
         }
 

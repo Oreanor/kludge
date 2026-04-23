@@ -84,6 +84,59 @@ export class GitService {
     this.postMessage({ type: 'git-busy', busy: false })
   }
 
+  async handleInit(folder: string): Promise<void> {
+    this.postMessage({ type: 'git-busy', busy: true })
+    try {
+      await this.run(['init'], folder)
+      this.postMessage({ type: 'git-op-done', op: 'init' })
+    } catch (e: any) {
+      this.postMessage({ type: 'git-error', error: String(e.stderr ?? e.message ?? e) })
+    }
+    this.postMessage({ type: 'git-busy', busy: false })
+  }
+
+  async handleResetPrev(folder: string): Promise<void> {
+    try {
+      await this.run(['rev-parse', 'HEAD~1'], folder)
+    } catch {
+      this.postMessage({ type: 'git-error', error: 'Нет предыдущего коммита для отката' })
+      return
+    }
+    const choice = await vscode.window.showWarningMessage(
+      'Откатить последний коммит? Все изменения в нём будут потеряны.',
+      { modal: true },
+      'Откатить'
+    )
+    if (choice !== 'Откатить') { return }
+    this.postMessage({ type: 'git-busy', busy: true })
+    try {
+      await this.run(['reset', '--hard', 'HEAD~1'], folder)
+      this.postMessage({ type: 'git-op-done', op: 'reset-prev' })
+    } catch (e: any) {
+      this.postMessage({ type: 'git-error', error: String(e.stderr ?? e.message ?? e) })
+    }
+    this.postMessage({ type: 'git-busy', busy: false })
+  }
+
+  async handleResetRemote(folder: string): Promise<void> {
+    const branch = await this.run(['rev-parse', '--abbrev-ref', 'HEAD'], folder).catch(() => '')
+    const choice = await vscode.window.showWarningMessage(
+      `Сбросить рабочую директорию до состояния origin/${branch}? Все локальные изменения будут потеряны.`,
+      { modal: true },
+      'Сбросить'
+    )
+    if (choice !== 'Сбросить') { return }
+    this.postMessage({ type: 'git-busy', busy: true })
+    try {
+      await this.run(['fetch', 'origin'], folder)
+      await this.run(['reset', '--hard', `origin/${branch}`], folder)
+      this.postMessage({ type: 'git-op-done', op: 'reset-remote' })
+    } catch (e: any) {
+      this.postMessage({ type: 'git-error', error: String(e.stderr ?? e.message ?? e) })
+    }
+    this.postMessage({ type: 'git-busy', busy: false })
+  }
+
   private async _promptCommitMessage(folder: string, staged: string): Promise<string | undefined> {
     let suggestion = ''
     if (this.orchestrator) {

@@ -64,7 +64,7 @@ export default function QuickPrompts({
     <>
       {/* Строка 1: превью, модель, очистить */}
       <div style={styles.toolRow}>
-        <button style={styles.previewButton} onClick={onOpenPreview} title={t.btnPreview}>⬡</button>
+        <button style={styles.previewButton} onClick={onOpenPreview}>{t.btnPreview}</button>
 
         {models.length > 0 && (
           <>
@@ -75,16 +75,13 @@ export default function QuickPrompts({
               style={styles.promptSelect}
             >
               <option value="auto">{t.modelAuto}</option>
-              <optgroup label="Gemini">
-                {models.filter(m => m.provider === 'gemini').map(m => (
-                  <option key={m.id} value={m.id}>{m.label}</option>
-                ))}
-              </optgroup>
-              <optgroup label="Groq">
-                {models.filter(m => m.provider === 'groq').map(m => (
-                  <option key={m.id} value={m.id}>{m.label}</option>
-                ))}
-              </optgroup>
+              {Array.from(new Set(models.map(m => m.provider))).map(provider => (
+                <optgroup key={provider} label={provider ?? ''}>
+                  {models.filter(m => m.provider === provider).map(m => (
+                    <option key={m.id} value={m.id}>{m.label}</option>
+                  ))}
+                </optgroup>
+              ))}
             </select>
           </>
         )}

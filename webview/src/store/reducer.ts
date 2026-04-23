@@ -1,4 +1,4 @@
-import { Message, PickedElement, ModelOption, FolderItem, CustomPrompt, ScheduledTaskInfo, STREAMING_ID } from '../types'
+import { Message, PickedElement, ModelOption, FolderItem, CustomPrompt, ScheduledTaskInfo, ProviderInfo, STREAMING_ID } from '../types'
 
 export interface AppState {
   messages: Message[]
@@ -24,6 +24,8 @@ export interface AppState {
   newPromptMode: boolean
   scheduledTasks: ScheduledTaskInfo[]
   calendarOpen: boolean
+  providers: ProviderInfo[]
+  providersOpen: boolean
 }
 
 export type AppAction =
@@ -60,6 +62,8 @@ export type AppAction =
   | { type: 'SET_SCHEDULED_TASKS'; tasks: ScheduledTaskInfo[] }
   | { type: 'TOGGLE_CALENDAR' }
   | { type: 'PATCH_LAST_MESSAGE'; text: string }
+  | { type: 'SET_PROVIDERS'; providers: ProviderInfo[] }
+  | { type: 'TOGGLE_PROVIDERS' }
 
 export const initialState: AppState = {
   messages: [],
@@ -85,6 +89,8 @@ export const initialState: AppState = {
   newPromptMode: false,
   scheduledTasks: [],
   calendarOpen: false,
+  providers: [],
+  providersOpen: false,
 }
 
 export function reducer(state: AppState, action: AppAction): AppState {
@@ -228,6 +234,8 @@ export function reducer(state: AppState, action: AppAction): AppState {
     case 'SET_NEW_PROMPT_MODE': return { ...state, newPromptMode: action.active }
     case 'SET_SCHEDULED_TASKS': return { ...state, scheduledTasks: action.tasks }
     case 'TOGGLE_CALENDAR': return { ...state, calendarOpen: !state.calendarOpen }
+    case 'SET_PROVIDERS': return { ...state, providers: action.providers }
+    case 'TOGGLE_PROVIDERS': return { ...state, providersOpen: !state.providersOpen }
     case 'PATCH_LAST_MESSAGE': {
       const idx = [...state.messages].map((m, i) => ({ m, i })).reverse()
         .find(({ m }) => m.role === 'assistant' && m.id !== STREAMING_ID)?.i ?? -1

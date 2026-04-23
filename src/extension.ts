@@ -59,26 +59,10 @@ function buildRequestContext(
 export async function activate(context: vscode.ExtensionContext) {
   const historyService = new HistoryService(context.globalState);
   const orchestrator = new ChatOrchestrator(historyService);
-  const provider = new ChatProvider(context.extensionUri, context.globalState, orchestrator);
+  const provider = new ChatProvider(context.extensionUri, context.globalState, context.secrets, orchestrator);
+  await provider.loadProviderKeys();
   void provider.restoreScheduledTasks();
   const preview = new PreviewPanel();
-
-  // ── инициализируем провайдеры из .env ────────────────────────────────
-  const geminiKey = process.env.GEMINI_API_KEY;
-  const groqKey   = process.env.GROQ_API_KEY;
-
-  if (geminiKey) {
-    orchestrator.setGeminiKey(geminiKey);
-    console.log('[Kludge] Gemini provider initialized');
-  }
-  if (groqKey) {
-    orchestrator.setGroqKey(groqKey);
-    console.log('[Kludge] Groq provider initialized');
-  }
-  if (!geminiKey && !groqKey) {
-    console.warn('[Kludge] No API keys found — running in echo mode');
-    vscode.window.showWarningMessage('Kludge Code: не найдены ключи GEMINI_API_KEY / GROQ_API_KEY в .env');
-  }
 
   // ── подписка на ошибки из preview → авто-фикс через AI ───────────────
   preview.subscribeToErrors(async (errorMsg, stack) => {

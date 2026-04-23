@@ -38,4 +38,14 @@ export interface CustomPrompt {
   text: string
 }
 
+export interface ProviderInfo {
+  id: string
+  name: string
+  configured: boolean
+  maskedKey?: string
+  pendingRemoval?: boolean
+  pendingMasked?: string
+  placeholder?: string
+}
+
 export const STREAMING_ID = '__streaming__'

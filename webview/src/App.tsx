@@ -9,6 +9,7 @@ import NpmPanel from './components/NpmPanel'
 import GitPanel from './components/GitPanel'
 import ElementChip from './components/ElementChip'
 import ScheduleCalendar from './components/ScheduleCalendar'
+import ProvidersPanel from './components/ProvidersPanel'
 
 declare const acquireVsCodeApi: () => { postMessage: (msg: unknown) => void }
 const vscode = acquireVsCodeApi()
@@ -22,6 +23,7 @@ export default function App() {
     selectedPrompt, selectedScope, scopeFolders, activeFile, workspaceRoot, input,
     customPrompts, newPromptMode,
     scheduledTasks, calendarOpen,
+    providers, providersOpen,
   } = state
 
   const t = getStrings(locale)
@@ -87,8 +89,16 @@ export default function App() {
             dispatch({ type: 'UPDATE_OR_ADD_MESSAGE', id: opId, text: t.msgGitCommitted(msg.commitMsg) })
           } else if (msg.op === 'push') {
             dispatch({ type: 'UPDATE_OR_ADD_MESSAGE', id: opId, text: t.msgGitPushed(msg.commitMsg) })
+          } else if (msg.op === 'init') {
+            dispatch({ type: 'UPDATE_OR_ADD_MESSAGE', id: opId, text: t.msgGitInited })
+          } else if (msg.op === 'reset-prev') {
+            dispatch({ type: 'UPDATE_OR_ADD_MESSAGE', id: opId, text: t.msgGitResetPrev })
+          } else if (msg.op === 'reset-remote') {
+            dispatch({ type: 'UPDATE_OR_ADD_MESSAGE', id: opId, text: t.msgGitResetRemote })
           }
-          if (msg.op === 'commit' || msg.op === 'push') vscode.postMessage({ type: 'git-info' })
+          if (['commit', 'push', 'init', 'reset-prev', 'reset-remote'].includes(msg.op)) {
+            vscode.postMessage({ type: 'git-info' })
+          }
           break
         }
         case 'git-error':
@@ -140,6 +150,9 @@ export default function App() {
           break
         case 'scheduled-tasks':
           if (Array.isArray(msg.tasks)) dispatch({ type: 'SET_SCHEDULED_TASKS', tasks: msg.tasks })
+          break
+        case 'providers':
+          if (Array.isArray(msg.providers)) dispatch({ type: 'SET_PROVIDERS', providers: msg.providers })
           break
         case 'patch-last-message':
           if (typeof msg.text === 'string') dispatch({ type: 'PATCH_LAST_MESSAGE', text: msg.text })
@@ -224,8 +237,10 @@ export default function App() {
     dispatch({ type: 'ADD_MESSAGE', id: `scheduled-${Date.now()}`, text: t.scheduleConfirm(formatted) })
   }
 
-  const gitOp = (op: 'add' | 'commit' | 'push') => {
-    dispatch({ type: 'ADD_MESSAGE', id: `git-op-${op}`, text: t.msgGitProgress(op) })
+  const gitOp = (op: 'add' | 'commit' | 'push' | 'init' | 'reset-prev' | 'reset-remote') => {
+    if (op === 'add' || op === 'commit' || op === 'push') {
+      dispatch({ type: 'ADD_MESSAGE', id: `git-op-${op}`, text: t.msgGitProgress(op) })
+    }
     vscode.postMessage({ type: `git-${op}` })
   }
 
@@ -318,19 +333,35 @@ export default function App() {
             dispatch({ type: 'SET_NEW_BRANCH_MODE', active: false })
           }}
           onCancelNewBranch={() => dispatch({ type: 'SET_NEW_BRANCH_MODE', active: false })}
-          onGitOp={gitOp}
+          onGitOp={gitOp as (op: 'add' | 'commit' | 'push' | 'init' | 'reset-prev' | 'reset-remote') => void}
           t={t}
         />
 
-        <button
-          style={{ ...styles.iconButton, alignSelf: 'flex-start', fontSize: 11, opacity: calendarOpen ? 1 : 0.6 }}
-          onClick={() => dispatch({ type: 'TOGGLE_CALENDAR' })}
-        >{t.calendarToggle}{scheduledTasks.length > 0 && ` (${scheduledTasks.length})`}</button>
+        <div style={{ display: 'flex', gap: 4 }}>
+          <button
+            style={{ ...styles.iconButton, fontSize: 11, opacity: calendarOpen ? 1 : 0.6 }}
+            onClick={() => dispatch({ type: 'TOGGLE_CALENDAR' })}
+          >{t.calendarToggle}{scheduledTasks.length > 0 && ` (${scheduledTasks.length})`}</button>
+          <button
+            style={{ ...styles.iconButton, fontSize: 11, opacity: providersOpen ? 1 : 0.6 }}
+            onClick={() => dispatch({ type: 'TOGGLE_PROVIDERS' })}
+          >{t.providersToggle}</button>
+        </div>
 
         {calendarOpen && (
           <ScheduleCalendar
             tasks={scheduledTasks}
             onCancel={id => { vscode.postMessage({ type: 'cancel-scheduled-task', id }) }}
+            t={t}
+          />
+        )}
+
+        {providersOpen && providers.length > 0 && (
+          <ProvidersPanel
+            providers={providers}
+            onSave={(providerId, key) => vscode.postMessage({ type: 'save-provider-key', providerId, key })}
+            onRemove={providerId => vscode.postMessage({ type: 'remove-provider-key', providerId })}
+            onRestore={providerId => vscode.postMessage({ type: 'restore-provider-key', providerId })}
             t={t}
           />
         )}

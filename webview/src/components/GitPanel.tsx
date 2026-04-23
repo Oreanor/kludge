@@ -13,7 +13,7 @@ interface Props {
   onNewBranchNameChange: (name: string) => void
   onCreateBranch: () => void
   onCancelNewBranch: () => void
-  onGitOp: (op: 'add' | 'commit' | 'push') => void
+  onGitOp: (op: 'add' | 'commit' | 'push' | 'init' | 'reset-prev' | 'reset-remote') => void
   t: I18n
 }
 
@@ -23,13 +23,14 @@ export default function GitPanel({
   onBranchChange, onNewBranchNameChange, onCreateBranch, onCancelNewBranch,
   onGitOp, t,
 }: Props) {
+  const hasRepo = gitBranches.length > 0
   const rowStyle = !workspaceRoot ? { ...styles.toolRow, opacity: 0.4 } : styles.toolRow
 
   return (
     <div style={rowStyle}>
       <span style={styles.rowLabel}>git</span>
 
-      {gitBranches.length > 0 && !newBranchMode && (
+      {hasRepo && !newBranchMode && (
         <select
           value={gitBranch}
           onChange={e => onBranchChange(e.target.value)}
@@ -50,6 +51,15 @@ export default function GitPanel({
         </select>
       )}
 
+      {workspaceRoot && !hasRepo && !newBranchMode && (
+        <button
+          style={styles.gitBtn}
+          onClick={() => onGitOp('init')}
+          disabled={gitBusy}
+          title="git init"
+        >{t.btnInit}</button>
+      )}
+
       {newBranchMode && (
         <div style={styles.branchInputRow}>
           <input
@@ -68,9 +78,25 @@ export default function GitPanel({
         </div>
       )}
 
-      <button style={styles.gitBtn} onClick={() => onGitOp('add')} disabled={gitBusy || !workspaceRoot}>{t.btnAdd}</button>
-      <button style={styles.gitBtn} onClick={() => onGitOp('commit')} disabled={gitBusy || !workspaceRoot}>{t.btnCommit}</button>
-      <button style={{ ...styles.gitBtn, ...styles.gitBtnPush }} onClick={() => onGitOp('push')} disabled={gitBusy || !workspaceRoot}>{t.btnPush}</button>
+      {hasRepo && (
+        <>
+          <button style={styles.gitBtn} onClick={() => onGitOp('commit')} disabled={gitBusy || !workspaceRoot}>{t.btnCommit}</button>
+          <button style={{ ...styles.gitBtn, ...styles.gitBtnPush }} onClick={() => onGitOp('push')} disabled={gitBusy || !workspaceRoot}>{t.btnPush}</button>
+          <button
+            style={{ ...styles.gitBtn, opacity: 0.7 }}
+            onClick={() => onGitOp('reset-prev')}
+            disabled={gitBusy || !workspaceRoot}
+            title="git reset --hard HEAD~1"
+          >{t.btnResetPrev}</button>
+          <button
+            style={{ ...styles.gitBtn, opacity: 0.7 }}
+            onClick={() => onGitOp('reset-remote')}
+            disabled={gitBusy || !workspaceRoot}
+            title="git fetch && git reset --hard origin/<branch>"
+          >{t.btnResetRemote}</button>
+        </>
+      )}
+
       {gitBusy && <span style={styles.gitBusyDot}>⏳</span>}
     </div>
   )
