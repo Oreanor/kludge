@@ -1,7 +1,7 @@
 {
-  "name": "air",
-  "displayName": "AIR",
-  "description": "AI React multiagent extension",
+  "name": "kludge-code",
+  "displayName": "Kludge Code",
+  "description": "Kludge Code AI assistant for VS Code",
   "version": "0.0.1",
   "engines": {
     "vscode": "^1.116.0"
@@ -12,25 +12,29 @@
   "main": "./dist/extension.js",
   "contributes": {
     "commands": [
-      { "command": "air.helloWorld",        "title": "Hello World" },
-      { "command": "air.testStream",        "title": "AIR: Test Stream" },
-      { "command": "air.openChat",          "title": "AIR: Open Chat" },
-      { "command": "air.sendMessage",       "title": "AIR: Send Message" },
-      { "command": "air.openPreview",       "title": "AIR: Open Preview",   "icon": "$(browser)" },
-      { "command": "air.reloadPreview",     "title": "AIR: Reload Preview", "icon": "$(refresh)" },
-      { "command": "air.pickElement",       "title": "AIR: Pick Element",   "icon": "$(inspect)" },
-      { "command": "air.setAnthropicKey",   "title": "AIR: Set Anthropic API Key" },
-      { "command": "air.clearAnthropicKey", "title": "AIR: Clear Anthropic API Key" }
+      { "command": "kludge.helloWorld",        "title": "Hello World" },
+      { "command": "kludge.testStream",        "title": "Kludge Code: Test Stream" },
+      { "command": "kludge.openChat",          "title": "Kludge Code: Open Chat" },
+      { "command": "kludge.sendMessage",       "title": "Kludge Code: Send Message" },
+      { "command": "kludge.openPreview",       "title": "Kludge Code: Open Preview",   "icon": "$(browser)" },
+      { "command": "kludge.reloadPreview",     "title": "Kludge Code: Reload Preview", "icon": "$(refresh)" },
+      { "command": "kludge.pickElement",       "title": "Kludge Code: Pick Element",   "icon": "$(inspect)" },
+      { "command": "kludge.setAnthropicKey",   "title": "Kludge Code: Set Anthropic API Key" },
+      { "command": "kludge.clearAnthropicKey", "title": "Kludge Code: Clear Anthropic API Key" }
     ],
+   "viewsContainers": {
+      "activitybar": [{
+        "id": "kludge-sidebar",
+        "title": "Kludge Code",
+        "icon": "$(flame)"
+      }]
+    },
     "views": {
-      "explorer": [
-        {
-          "type": "webview",
-          "id": "air.chatView",
-          "name": "AIR Chat",
-          "icon": "$(comment-discussion)"
-        }
-      ]
+      "kludge-sidebar": [{
+        "type": "webview",
+        "id": "kludge.chatView",
+        "name": "Chat"
+      }]
     }
   },
   "scripts": {

@@ -24,7 +24,7 @@ export class PreviewPanel {
 
     // Start proxy so bridge script is injected into every HTML page load
     const proxyUrl = await this.proxy.start(targetUrl, getBridgeScript()).catch(err => {
-      console.error('[AIR] Proxy start failed, falling back to direct URL:', err);
+      console.error('[Kludge] Proxy start failed, falling back to direct URL:', err);
       return targetUrl;
     });
 
@@ -35,8 +35,8 @@ export class PreviewPanel {
     }
 
     this.panel = vscode.window.createWebviewPanel(
-      'air.preview',
-      'AIR Preview',
+      'kludge.preview',
+      'Kludge Preview',
       vscode.ViewColumn.Beside,
       {
         enableScripts: true,
@@ -59,15 +59,15 @@ export class PreviewPanel {
 
   startElementPicker() {
     if (!this.panel) {
-      vscode.window.showWarningMessage('Сначала открой Preview (AIR: Open Preview)');
+      vscode.window.showWarningMessage('Сначала открой Preview (Kludge: Open Preview)');
       return;
     }
     this.panel.reveal(vscode.ViewColumn.Beside);
     this.panel.webview.postMessage({ type: 'shell:start_picker' });
-    vscode.window.showInformationMessage('AIR Picker: кликни на элемент в Preview →');
+    vscode.window.showInformationMessage('Kludge Picker: кликни на элемент в Preview →');
   }
 
-  // ── остановить пикер из extension (команда air.stopPicker) ───────────
+  // ── остановить пикер из extension (команда kludge.stopPicker) ───────────
   stopElementPicker() {
     if (!this.panel) { return; }
     this.panel.webview.postMessage({ type: 'shell:stop_picker' });
@@ -471,8 +471,8 @@ export class PreviewPanel {
 export function getBridgeScript(): string {
   return `
 (function() {
-  if (window.__AIR_BRIDGE__) return
-  window.__AIR_BRIDGE__ = true
+  if (window.__KLUDGE_BRIDGE__) return
+  window.__KLUDGE_BRIDGE__ = true
 
   // ── перехват console.error ────────────────────────────────────────────
   const _err = console.error.bind(console)

@@ -22,7 +22,7 @@ export class ProxyService {
       this.server!.on('error', reject);
     });
 
-    console.log(`[AIR] Proxy started on port ${this.port} → ${targetUrl}`);
+    console.log(`[Kludge] Proxy started on port ${this.port} → ${targetUrl}`);
     return `http://127.0.0.1:${this.port}`;
   }
 
@@ -81,7 +81,7 @@ export class ProxyService {
     proxyReq.on('error', err => {
       if (!res.headersSent) {
         res.writeHead(502);
-        res.end(`[AIR Proxy] ${err.message}`);
+        res.end(`[Kludge Proxy] ${err.message}`);
       }
     });
 

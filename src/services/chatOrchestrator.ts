@@ -61,7 +61,7 @@ export class ChatOrchestrator {
     const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
 
     const systemPrompt = [
-      'Ты AI-ассистент встроенный в VS Code расширение AIR.',
+      'Ты AI-ассистент встроенный в VS Code расширение Kludge Code.',
       `Рабочая директория: ${workspaceRoot}`,
       'Отвечай на языке пользователя.',
     ].join('\n');
@@ -91,7 +91,7 @@ export class ChatOrchestrator {
     const descriptor = getModelDescriptor(modelId);
     const provider = descriptor?.provider;
 
-    console.log(`[AIR] Using model: ${modelId} (${provider ?? 'unknown'})`);
+    console.log(`[Kludge] Using model: ${modelId} (${provider ?? 'unknown'})`);
 
     let assembled = '';
     let gen: AsyncIterable<string>;

@@ -69,7 +69,7 @@ export class TelegramService {
         }
       } catch (e: any) {
         if (!this._running) { break; }
-        console.error('[AIR] Telegram polling error:', e?.message ?? e);
+        console.error('[Kludge] Telegram polling error:', e?.message ?? e);
         // экспоненциальный backoff при ошибках сети
         await sleep(this._retryDelay);
         this._retryDelay = Math.min(this._retryDelay * 2, this._maxRetryDelay);

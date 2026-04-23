@@ -54,15 +54,15 @@ export async function activate(context: vscode.ExtensionContext) {
 
   if (geminiKey) {
     orchestrator.setGeminiKey(geminiKey);
-    console.log('[air] Gemini provider initialized');
+    console.log('[Kludge] Gemini provider initialized');
   }
   if (groqKey) {
     orchestrator.setGroqKey(groqKey);
-    console.log('[air] Groq provider initialized');
+    console.log('[Kludge] Groq provider initialized');
   }
   if (!geminiKey && !groqKey) {
-    console.warn('[air] No API keys found — running in echo mode');
-    vscode.window.showWarningMessage('AIR: не найдены ключи GEMINI_API_KEY / GROQ_API_KEY в .env');
+    console.warn('[Kludge] No API keys found — running in echo mode');
+    vscode.window.showWarningMessage('Kludge Code: не найдены ключи GEMINI_API_KEY / GROQ_API_KEY в .env');
   }
 
   // ── подписка на ошибки из preview → авто-фикс через AI ───────────────
@@ -95,11 +95,11 @@ export async function activate(context: vscode.ExtensionContext) {
   });
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('air.openPreview', () => preview.open()),
-    vscode.commands.registerCommand('air.openPreviewAt', (url: string) => preview.open(url)),
-    vscode.commands.registerCommand('air.reloadPreview', () => preview.reload()),
-    vscode.commands.registerCommand('air.pickElement', () => preview.startElementPicker()),
-    vscode.commands.registerCommand('air.stopPicker', () => preview.stopElementPicker()),
+    vscode.commands.registerCommand('kludge.openPreview', () => preview.open()),
+    vscode.commands.registerCommand('kludge.openPreviewAt', (url: string) => preview.open(url)),
+    vscode.commands.registerCommand('kludge.reloadPreview', () => preview.reload()),
+    vscode.commands.registerCommand('kludge.pickElement', () => preview.startElementPicker()),
+    vscode.commands.registerCommand('kludge.stopPicker', () => preview.stopElementPicker()),
     vscode.workspace.onDidSaveTextDocument(() => preview.reload())
   );
 
@@ -141,12 +141,12 @@ export async function activate(context: vscode.ExtensionContext) {
       provider.postMessage({ type: 'done', conversationId: request.conversationId });
 
       if (fullResponse) {
-        await telegram.send(fullResponse).catch(e => console.error('[air] Telegram send error:', e));
+        await telegram.send(fullResponse).catch(e => console.error('[Kludge] Telegram send error:', e));
       }
     });
 
     context.subscriptions.push({ dispose: () => telegram.stopPolling() });
-    console.log('[air] Telegram polling started');
+    console.log('[Kludge] Telegram polling started');
   }
 
   context.subscriptions.push(
@@ -158,14 +158,14 @@ export async function activate(context: vscode.ExtensionContext) {
 
   // ── dev-команды ───────────────────────────────────────────────────────
   context.subscriptions.push(
-    vscode.commands.registerCommand('air.helloWorld', () => {
-      vscode.window.showInformationMessage('AIR is running!');
+    vscode.commands.registerCommand('kludge.helloWorld', () => {
+      vscode.window.showInformationMessage('Kludge Code is running!');
     })
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('air.testStream', async () => {
-      vscode.window.showInformationMessage('AIR: test stream started');
+    vscode.commands.registerCommand('kludge.testStream', async () => {
+      vscode.window.showInformationMessage('Kludge Code: test stream started');
       const workspaceFiles = await listWorkspaceFiles();
       const request: ChatRequest = {
         conversationId: 'test',
@@ -177,19 +177,19 @@ export async function activate(context: vscode.ExtensionContext) {
         provider.postMessage({ type: 'delta', delta });
       });
       provider.postMessage({ type: 'done' });
-      vscode.window.showInformationMessage('AIR: test stream finished');
+      vscode.window.showInformationMessage('Kludge Code: test stream finished');
     })
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('air.openChat', async () => {
+    vscode.commands.registerCommand('kludge.openChat', async () => {
       await vscode.commands.executeCommand('workbench.view.explorer');
-      vscode.window.showInformationMessage('AIR: Opened Explorer — please expand "AIR Chat" view.');
+      vscode.window.showInformationMessage('Kludge Code: Opened Explorer — please expand "Kludge Code Chat" view.');
     })
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('air.sendMessage', async () => {
+    vscode.commands.registerCommand('kludge.sendMessage', async () => {
       const convId = await vscode.window.showInputBox({ prompt: 'Conversation ID', value: 'default' });
       if (convId === undefined) { return; }
       const text = await vscode.window.showInputBox({ prompt: 'Message text' });

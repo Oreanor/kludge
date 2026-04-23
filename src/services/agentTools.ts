@@ -116,7 +116,7 @@ export async function executeTool(
 
       // 3. Открываем diff: слева оригинал, справа предлагаемое
       const originalUri = vscode.Uri.file(fullPath);
-      const diffTitle = `AIR: ${path.basename(input.path)} — ${input.description}`;
+      const diffTitle = `Kludge: ${path.basename(input.path)} — ${input.description}`;
 
       if (original) {
         // Файл существует — показываем настоящий diff
@@ -171,7 +171,7 @@ export async function executeTool(
       );
       if (!confirmed) {return 'Пользователь отклонил выполнение команды.';}
 
-      const terminal = vscode.window.createTerminal('AIR Agent');
+      const terminal = vscode.window.createTerminal('Kludge Agent');
       terminal.show();
       terminal.sendText(input.command);
       return `Команда отправлена в терминал: ${input.command}`;
