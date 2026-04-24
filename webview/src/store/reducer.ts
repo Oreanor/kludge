@@ -6,6 +6,7 @@ export interface AppState {
   pickedElement: PickedElement | null
   locale: string
   models: ModelOption[]
+  disabledProviders: string[]
   selectedModel: string
   npmScripts: string[]
   selectedScript: string
@@ -30,7 +31,8 @@ export interface AppState {
 
 export type AppAction =
   | { type: 'SET_LOCALE'; locale: string }
-  | { type: 'SET_MODELS'; models: ModelOption[] }
+  | { type: 'SET_MODELS'; models: ModelOption[]; disabledProviders?: string[] }
+  | { type: 'SET_PROVIDERS'; providers: ProviderInfo[]; disabledProviders?: string[] }
   | { type: 'SET_MODEL'; modelId: string }
   | { type: 'SET_NPM_SCRIPTS'; scripts: string[] }
   | { type: 'SET_SELECTED_SCRIPT'; script: string }
@@ -62,7 +64,6 @@ export type AppAction =
   | { type: 'SET_SCHEDULED_TASKS'; tasks: ScheduledTaskInfo[] }
   | { type: 'TOGGLE_CALENDAR' }
   | { type: 'PATCH_LAST_MESSAGE'; text: string }
-  | { type: 'SET_PROVIDERS'; providers: ProviderInfo[] }
   | { type: 'TOGGLE_PROVIDERS' }
 
 export const initialState: AppState = {
@@ -71,6 +72,7 @@ export const initialState: AppState = {
   pickedElement: null,
   locale: 'en',
   models: [],
+  disabledProviders: [],
   selectedModel: 'auto',
   npmScripts: [],
   selectedScript: 'build',
@@ -96,7 +98,12 @@ export const initialState: AppState = {
 export function reducer(state: AppState, action: AppAction): AppState {
   switch (action.type) {
     case 'SET_LOCALE': return { ...state, locale: action.locale }
-    case 'SET_MODELS': return { ...state, models: action.models }
+    case 'SET_MODELS': {
+      const dp = action.disabledProviders ?? state.disabledProviders
+      const selectedProvider = state.models.find(m => m.id === state.selectedModel)?.provider ?? ''
+      const selected = selectedProvider && dp.includes(selectedProvider) ? 'auto' : state.selectedModel
+      return { ...state, models: action.models, disabledProviders: dp, selectedModel: selected }
+    }
     case 'SET_MODEL': return { ...state, selectedModel: action.modelId }
     case 'SET_NPM_SCRIPTS': {
       const preferred = ['dev', 'build', 'start']
@@ -234,7 +241,10 @@ export function reducer(state: AppState, action: AppAction): AppState {
     case 'SET_NEW_PROMPT_MODE': return { ...state, newPromptMode: action.active }
     case 'SET_SCHEDULED_TASKS': return { ...state, scheduledTasks: action.tasks }
     case 'TOGGLE_CALENDAR': return { ...state, calendarOpen: !state.calendarOpen }
-    case 'SET_PROVIDERS': return { ...state, providers: action.providers }
+    case 'SET_PROVIDERS': {
+      const dp = action.disabledProviders ?? state.disabledProviders
+      return { ...state, providers: action.providers, disabledProviders: dp }
+    }
     case 'TOGGLE_PROVIDERS': return { ...state, providersOpen: !state.providersOpen }
     case 'PATCH_LAST_MESSAGE': {
       const idx = [...state.messages].map((m, i) => ({ m, i })).reverse()

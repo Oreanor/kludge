@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { ModelOption, FolderItem } from '../types'
+import { FolderItem } from '../types'
 import { I18n } from '../i18n'
 import { styles } from '../styles'
 
@@ -10,9 +10,6 @@ interface QuickPrompt {
 }
 
 interface Props {
-  models: ModelOption[]
-  selectedModel: string
-  onModelChange: (id: string) => void
   scopeFolders: FolderItem[]
   selectedScope: string
   onScopeChange: (scope: string) => void
@@ -23,8 +20,6 @@ interface Props {
   isStreaming: boolean
   onSendQuickPrompt: () => void
   onSchedulePrompt: (scheduledAt: string) => void
-  onOpenPreview: () => void
-  onNewChat: () => void
   newPromptMode: boolean
   onSaveNewPrompt: (label: string, text: string) => void
   onCancelNewPrompt: () => void
@@ -32,10 +27,9 @@ interface Props {
 }
 
 export default function QuickPrompts({
-  models, selectedModel, onModelChange,
   scopeFolders, selectedScope, onScopeChange, activeFile,
   quickPrompts, selectedPrompt, onPromptChange,
-  isStreaming, onSendQuickPrompt, onSchedulePrompt, onOpenPreview, onNewChat,
+  isStreaming, onSendQuickPrompt, onSchedulePrompt,
   newPromptMode, onSaveNewPrompt, onCancelNewPrompt, t,
 }: Props) {
   const [newLabel, setNewLabel] = useState('')
@@ -62,35 +56,9 @@ export default function QuickPrompts({
 
   return (
     <>
-      {/* Строка 1: превью, модель, очистить */}
-      <div style={styles.toolRow}>
-        <button style={styles.previewButton} onClick={onOpenPreview}>{t.btnPreview}</button>
-
-        {models.length > 0 && (
-          <>
-            <span style={styles.rowLabel}>{t.modelLabel}</span>
-            <select
-              value={selectedModel}
-              onChange={e => onModelChange(e.target.value)}
-              style={styles.promptSelect}
-            >
-              <option value="auto">{t.modelAuto}</option>
-              {Array.from(new Set(models.map(m => m.provider))).map(provider => (
-                <optgroup key={provider} label={provider ?? ''}>
-                  {models.filter(m => m.provider === provider).map(m => (
-                    <option key={m.id} value={m.id}>{m.label}</option>
-                  ))}
-                </optgroup>
-              ))}
-            </select>
-          </>
-        )}
-
-        <button style={styles.iconButton} onClick={onNewChat}>{t.btnClear}</button>
-      </div>
-
-      {/* Строка 2: действие — либо выбор, либо форма нового */}
+      {/* Строка 1: действие — либо выбор, либо форма нового */}
       {!newPromptMode ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
         <div style={styles.toolRow}>
           <span style={styles.rowLabel}>{t.quickActionLabel}</span>
 
@@ -136,21 +104,24 @@ export default function QuickPrompts({
             <option value="task">{t.modeTask}</option>
           </select>
 
-          {scheduleMode === 'task' && (
-            <input
-              type="datetime-local"
-              value={scheduledAt}
-              onChange={e => setScheduledAt(e.target.value)}
-              style={styles.scheduleDatetime}
-            />
-          )}
-
           <button
             style={isStreaming ? { ...styles.quickRunButton, opacity: 0.5, cursor: 'not-allowed' } : styles.quickRunButton}
             onClick={() => scheduleMode === 'action' ? onSendQuickPrompt() : onSchedulePrompt(scheduledAt)}
             disabled={isStreaming || (scheduleMode === 'task' && !scheduledAt)}
             title={t.quickPromptTooltip}
           >＋</button>
+        </div>
+        {scheduleMode === 'task' && (
+          <div style={styles.toolRow}>
+            <span style={styles.rowLabel}>{t.scheduleAtLabel}</span>
+            <input
+              type="datetime-local"
+              value={scheduledAt}
+              onChange={e => setScheduledAt(e.target.value)}
+              style={styles.scheduleDatetime}
+            />
+          </div>
+        )}
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>

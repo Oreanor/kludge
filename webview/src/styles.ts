@@ -74,9 +74,14 @@ export const styles: Record<string, React.CSSProperties> = {
   inputRow: {
     display: 'flex',
     flexDirection: 'column',
-    gap: 8,
+    gap: 10,
     padding: '8px 8px 10px',
     borderTop: '1px solid var(--vscode-panel-border)',
+  },
+  inputGroup: {
+    display: 'flex',
+    flexDirection: 'column' as const,
+    gap: 4,
   },
   chipRow: {
     display: 'flex',

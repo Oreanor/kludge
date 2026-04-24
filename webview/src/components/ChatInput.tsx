@@ -10,12 +10,18 @@ interface Props {
   onKeyDown: (e: React.KeyboardEvent) => void
   onSend: () => void
   onStop: () => void
+  onClear: () => void
+  onOpenPreview: () => void
   t: I18n
 }
 
-export default function ChatInput({ input, isStreaming, textareaRef, onChange, onKeyDown, onSend, onStop, t }: Props) {
+export default function ChatInput({ input, isStreaming, textareaRef, onChange, onKeyDown, onSend, onStop, onClear, onOpenPreview, t }: Props) {
   return (
     <div style={styles.textareaRow}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 3, alignSelf: 'stretch' }}>
+        <button style={{ ...styles.previewButton, flex: 1 }} onClick={onOpenPreview}>{t.btnPreview}</button>
+        <button style={{ ...styles.clearButton, flex: 1 }} onClick={onClear}>{t.btnClear}</button>
+      </div>
       <textarea
         ref={textareaRef}
         style={styles.textarea}

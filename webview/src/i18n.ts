@@ -54,6 +54,7 @@ export interface I18n {
   newPromptCancel: string
   modeAction: string
   modeTask: string
+  scheduleAtLabel: string
   scheduleConfirm: (dt: string) => string
   calendarToggle: string
   calendarNoTasks: string
@@ -121,6 +122,7 @@ const en: I18n = {
   newPromptCancel: 'Cancel',
   modeAction: 'Permanent',
   modeTask: 'One-time',
+  scheduleAtLabel: 'Run at',
   scheduleConfirm: dt => `⏰ Scheduled for ${dt}`,
   calendarToggle: '📅 Schedule',
   calendarNoTasks: 'No tasks for this day',
@@ -136,7 +138,7 @@ const ru: I18n = {
   btnSend: 'Отправить',
   btnStop: '⏹ Стоп',
   btnPreview: '⬡ Превью приложения',
-  btnClear: '✕ Очистить разговор',
+  btnClear: '✕ Очистить чат',
   btnAdd: '＋ Add',
   btnCommit: '✓ Commit',
   btnPush: '⬆ Push',
@@ -188,6 +190,7 @@ const ru: I18n = {
   newPromptCancel: 'Отмена',
   modeAction: 'Постоянный',
   modeTask: 'Одноразовый',
+  scheduleAtLabel: 'Время запуска',
   scheduleConfirm: dt => `⏰ Запланировано на ${dt}`,
   calendarToggle: '📅 Расписание',
   calendarNoTasks: 'Задач нет',
@@ -203,7 +206,7 @@ const pt: I18n = {
   btnSend: 'Enviar',
   btnStop: '⏹ Parar',
   btnPreview: '⬡ Prévia do app',
-  btnClear: '✕ Limpar conversa',
+  btnClear: '✕ Limpar chat',
   btnAdd: '＋ Add',
   btnCommit: '✓ Commit',
   btnPush: '⬆ Push',
@@ -255,6 +258,7 @@ const pt: I18n = {
   newPromptCancel: 'Cancelar',
   modeAction: 'Permanente',
   modeTask: 'Único',
+  scheduleAtLabel: 'Executar às',
   scheduleConfirm: dt => `⏰ Agendado para ${dt}`,
   calendarToggle: '📅 Agenda',
   calendarNoTasks: 'Sem tarefas neste dia',

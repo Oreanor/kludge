@@ -236,7 +236,7 @@ export class ChatOrchestrator {
       + '<read-files>path/to/file1.ts,path/to/file2.ts</read-files>\n'
       + 'Иначе — отвечай сразу.';
 
-    const gen = this._getGen(apiMessages, modelId, provider, pass1System);
+    const gen = this._getGen(apiMessages, modelId, provider, pass1System, signal);
     if (!gen) { return ''; }
 
     // Buffer early chunks to detect the tag before showing anything to the user.
@@ -306,7 +306,7 @@ export class ChatOrchestrator {
     onDelta: (delta: string) => void,
     signal?: AbortSignal,
   ): Promise<string> {
-    const gen = this._getGen(messages, modelId, provider, systemPrompt);
+    const gen = this._getGen(messages, modelId, provider, systemPrompt, signal);
     if (!gen) { return ''; }
     let assembled = '';
     for await (const chunk of gen) {
@@ -324,14 +324,15 @@ export class ChatOrchestrator {
     modelId: string,
     provider: string,
     systemPrompt: string,
+    signal?: AbortSignal,
   ): AsyncIterable<string> | null {
     if (provider === 'gemini'     && this.gemini)     { return this.gemini.stream(messages, modelId, systemPrompt); }
-    if (provider === 'groq'       && this.groq)       { return this.groq.stream(messages, modelId, systemPrompt); }
-    if (provider === 'openrouter' && this.openrouter) { return this.openrouter.stream(messages, modelId, systemPrompt); }
+    if (provider === 'groq'       && this.groq)       { return this.groq.stream(messages, modelId, systemPrompt, signal); }
+    if (provider === 'openrouter' && this.openrouter) { return this.openrouter.stream(messages, modelId, systemPrompt, signal); }
     if (provider === 'anthropic'  && this.anthropic)  { return this.anthropic.stream(messages, modelId, systemPrompt); }
-    if (provider === 'deepseek'   && this.deepseek)   { return this.deepseek.stream(messages, modelId, systemPrompt); }
-    if (provider === 'mistral'    && this.mistral)    { return this.mistral.stream(messages, modelId, systemPrompt); }
-    if (provider === 'openai'     && this.openai)     { return this.openai.stream(messages, modelId, systemPrompt); }
+    if (provider === 'deepseek'   && this.deepseek)   { return this.deepseek.stream(messages, modelId, systemPrompt, signal); }
+    if (provider === 'mistral'    && this.mistral)    { return this.mistral.stream(messages, modelId, systemPrompt, signal); }
+    if (provider === 'openai'     && this.openai)     { return this.openai.stream(messages, modelId, systemPrompt, signal); }
     if (provider === 'ollama'     && this.ollama)     { return this.ollama.stream(messages, modelId, systemPrompt); }
     return null;
   }

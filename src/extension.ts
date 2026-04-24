@@ -7,40 +7,7 @@ dotenv.config({ path: path.join(__dirname, '..', '.env') });
 import { ChatProvider } from './chatProvider';
 import { ChatOrchestrator, HistoryService, TelegramService, PreviewPanel } from './services';
 import { ChatRequest } from './types';
-
-const _TG_CMD_RE = /<vscode-cmd>([\s\S]*?)<\/vscode-cmd>/g;
-function extractTgCmds(text: string): Array<Record<string, any>> {
-  const cmds: Array<Record<string, any>> = [];
-  let m: RegExpExecArray | null;
-  _TG_CMD_RE.lastIndex = 0;
-  while ((m = _TG_CMD_RE.exec(text)) !== null) {
-    try { cmds.push(JSON.parse(m[1])); } catch {}
-  }
-  return cmds;
-}
-function stripTgCmds(text: string): string {
-  return text.replace(/<vscode-cmd>[\s\S]*?<\/vscode-cmd>/g, '').trim();
-}
-
-async function listWorkspaceFiles(): Promise<string[]> {
-  const folders = vscode.workspace.workspaceFolders;
-  if (!folders?.length) { return []; }
-
-  const files: string[] = [];
-
-  for (const folder of folders) {
-    const entries = await vscode.workspace.findFiles(
-      new vscode.RelativePattern(folder, '**/*'),
-      '**/{node_modules,.git,dist,out,build,.next}/**',
-      200
-    );
-    for (const uri of entries) {
-      files.push(vscode.workspace.asRelativePath(uri, false));
-    }
-  }
-
-  return files;
-}
+import { extractCmds, stripCmds, listWorkspaceFiles } from './utils/vscodeCmd';
 
 function buildRequestContext(
   taskKind: 'chat' | 'edit' | 'preview' | 'icons' | 'image' | 'search' | 'agent',
@@ -139,8 +106,8 @@ export async function activate(context: vscode.ExtensionContext) {
         provider.postMessage({ type: 'delta', delta, conversationId: request.conversationId });
       });
 
-      const cmds = extractTgCmds(fullResponse);
-      const clean = stripTgCmds(fullResponse);
+      const cmds = extractCmds(fullResponse);
+      const clean = stripCmds(fullResponse);
 
       provider.postMessage({ type: 'done', conversationId: request.conversationId });
       if (cmds.length > 0) {

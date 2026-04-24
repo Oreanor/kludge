@@ -10,6 +10,7 @@ import GitPanel from './components/GitPanel'
 import ElementChip from './components/ElementChip'
 import ScheduleCalendar from './components/ScheduleCalendar'
 import ProvidersPanel from './components/ProvidersPanel'
+import ModelBar from './components/ModelBar'
 
 declare const acquireVsCodeApi: () => { postMessage: (msg: unknown) => void }
 const vscode = acquireVsCodeApi()
@@ -18,7 +19,7 @@ export default function App() {
   const [state, dispatch] = useReducer(reducer, initialState)
   const {
     messages, isStreaming, pickedElement, locale,
-    models, selectedModel, npmScripts, selectedScript,
+    models, disabledProviders, selectedModel, npmScripts, selectedScript,
     gitBranch, gitBranches, gitBusy, newBranchMode, newBranchName,
     selectedPrompt, selectedScope, scopeFolders, activeFile, workspaceRoot, input,
     customPrompts, newPromptMode,
@@ -66,7 +67,7 @@ export default function App() {
           dispatch({ type: 'SET_ACTIVE_FILE', relativePath: msg.relativePath ?? null })
           break
         case 'models':
-          dispatch({ type: 'SET_MODELS', models: Array.isArray(msg.models) ? msg.models : [] })
+          dispatch({ type: 'SET_MODELS', models: Array.isArray(msg.models) ? msg.models : [], disabledProviders: Array.isArray(msg.disabledProviders) ? msg.disabledProviders : undefined })
           break
         case 'locale':
           if (msg.locale) dispatch({ type: 'SET_LOCALE', locale: String(msg.locale) })
@@ -152,7 +153,7 @@ export default function App() {
           if (Array.isArray(msg.tasks)) dispatch({ type: 'SET_SCHEDULED_TASKS', tasks: msg.tasks })
           break
         case 'providers':
-          if (Array.isArray(msg.providers)) dispatch({ type: 'SET_PROVIDERS', providers: msg.providers })
+          if (Array.isArray(msg.providers)) dispatch({ type: 'SET_PROVIDERS', providers: msg.providers, disabledProviders: Array.isArray(msg.disabledProviders) ? msg.disabledProviders : undefined })
           break
         case 'patch-last-message':
           if (typeof msg.text === 'string') dispatch({ type: 'PATCH_LAST_MESSAGE', text: msg.text })
@@ -255,27 +256,53 @@ export default function App() {
 
       <div style={styles.inputRow}>
 
-        {pickedElement && (
-          <div style={styles.chipRow}>
-            <ElementChip el={pickedElement} onRemove={() => dispatch({ type: 'SET_PICKED_ELEMENT', element: null })} t={t} />
-          </div>
-        )}
+        {/* чат */}
+        <div style={styles.inputGroup}>
+          {pickedElement && (
+            <div style={styles.chipRow}>
+              <ElementChip el={pickedElement} onRemove={() => dispatch({ type: 'SET_PICKED_ELEMENT', element: null })} t={t} />
+            </div>
+          )}
+          <ChatInput
+            input={input}
+            isStreaming={isStreaming}
+            textareaRef={textareaRef}
+            onChange={value => { dispatch({ type: 'SET_INPUT', value }); resizeTextarea() }}
+            onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } }}
+            onSend={send}
+            onStop={stop}
+            onClear={newChat}
+            onOpenPreview={() => vscode.postMessage({ type: 'command', command: 'kludge.openPreview' })}
+            t={t}
+          />
+        </div>
 
-        <ChatInput
-          input={input}
-          isStreaming={isStreaming}
-          textareaRef={textareaRef}
-          onChange={value => { dispatch({ type: 'SET_INPUT', value }); resizeTextarea() }}
-          onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } }}
-          onSend={send}
-          onStop={stop}
-          t={t}
-        />
+        {/* модель + ключи */}
+        <div style={styles.inputGroup}>
+          <ModelBar
+            models={models}
+            disabledProviders={disabledProviders}
+            selectedModel={selectedModel}
+            onModelChange={id => dispatch({ type: 'SET_MODEL', modelId: id })}
+            onToggleKeys={() => dispatch({ type: 'TOGGLE_PROVIDERS' })}
+            providersOpen={providersOpen}
+            t={t}
+          />
+          {providersOpen && providers.length > 0 && (
+            <ProvidersPanel
+              providers={providers}
+              disabledProviders={disabledProviders}
+              onSave={(providerId, key) => vscode.postMessage({ type: 'save-provider-key', providerId, key })}
+              onRemove={providerId => vscode.postMessage({ type: 'remove-provider-key', providerId })}
+              onRestore={providerId => vscode.postMessage({ type: 'restore-provider-key', providerId })}
+              onToggleProvider={providerId => vscode.postMessage({ type: 'toggle-provider', providerId })}
+              t={t}
+            />
+          )}
+        </div>
 
+        {/* быстрые действия */}
         <QuickPrompts
-          models={models}
-          selectedModel={selectedModel}
-          onModelChange={id => dispatch({ type: 'SET_MODEL', modelId: id })}
           scopeFolders={scopeFolders}
           selectedScope={selectedScope}
           onScopeChange={scope => dispatch({ type: 'SET_SELECTED_SCOPE', scope })}
@@ -289,8 +316,6 @@ export default function App() {
           isStreaming={isStreaming}
           onSendQuickPrompt={sendQuickPrompt}
           onSchedulePrompt={scheduleQuickPrompt}
-          onOpenPreview={() => vscode.postMessage({ type: 'command', command: 'kludge.openPreview' })}
-          onNewChat={newChat}
           newPromptMode={newPromptMode}
           onSaveNewPrompt={(label, text) => {
             vscode.postMessage({ type: 'save-custom-prompt', label, text })
@@ -300,71 +325,59 @@ export default function App() {
           t={t}
         />
 
-        <NpmPanel
-          workspaceRoot={workspaceRoot}
-          npmScripts={npmScripts}
-          selectedScript={selectedScript}
-          onScriptChange={script => dispatch({ type: 'SET_SELECTED_SCRIPT', script })}
-          onRun={() => {
-            const cmd = selectedScript === 'install' ? 'npm install' : `npm run ${selectedScript}`
-            vscode.postMessage({ type: 'npm-run', script: selectedScript })
-            if (selectedScript !== 'dev') {
-              dispatch({ type: 'ADD_MESSAGE', id: `npm-${Date.now()}`, text: t.msgNpmStarted(cmd) })
-            }
-          }}
-        />
-
-        <GitPanel
-          workspaceRoot={workspaceRoot}
-          gitBranch={gitBranch}
-          gitBranches={gitBranches}
-          gitBusy={gitBusy}
-          newBranchMode={newBranchMode}
-          newBranchName={newBranchName}
-          onBranchChange={value => {
-            if (value === '__new__') { dispatch({ type: 'SET_NEW_BRANCH_MODE', active: true }); return }
-            vscode.postMessage({ type: 'git-checkout', branch: value, isNew: false })
-          }}
-          onNewBranchNameChange={name => dispatch({ type: 'SET_NEW_BRANCH_NAME', name })}
-          onCreateBranch={() => {
-            const name = newBranchName.trim()
-            if (!name) return
-            vscode.postMessage({ type: 'git-checkout', branch: name, isNew: true })
-            dispatch({ type: 'SET_NEW_BRANCH_MODE', active: false })
-          }}
-          onCancelNewBranch={() => dispatch({ type: 'SET_NEW_BRANCH_MODE', active: false })}
-          onGitOp={gitOp as (op: 'add' | 'commit' | 'push' | 'init' | 'reset-prev' | 'reset-remote') => void}
-          t={t}
-        />
-
-        <div style={{ display: 'flex', gap: 4 }}>
-          <button
-            style={{ ...styles.iconButton, fontSize: 11, opacity: calendarOpen ? 1 : 0.6 }}
-            onClick={() => dispatch({ type: 'TOGGLE_CALENDAR' })}
-          >{t.calendarToggle}{scheduledTasks.length > 0 && ` (${scheduledTasks.length})`}</button>
-          <button
-            style={{ ...styles.iconButton, fontSize: 11, opacity: providersOpen ? 1 : 0.6 }}
-            onClick={() => dispatch({ type: 'TOGGLE_PROVIDERS' })}
-          >{t.providersToggle}</button>
+        {/* npm + git */}
+        <div style={styles.inputGroup}>
+          <NpmPanel
+            workspaceRoot={workspaceRoot}
+            npmScripts={npmScripts}
+            selectedScript={selectedScript}
+            onScriptChange={script => dispatch({ type: 'SET_SELECTED_SCRIPT', script })}
+            onRun={() => {
+              const cmd = selectedScript === 'install' ? 'npm install' : `npm run ${selectedScript}`
+              vscode.postMessage({ type: 'npm-run', script: selectedScript })
+              if (selectedScript !== 'dev') {
+                dispatch({ type: 'ADD_MESSAGE', id: `npm-${Date.now()}`, text: t.msgNpmStarted(cmd) })
+              }
+            }}
+          />
+          <GitPanel
+            workspaceRoot={workspaceRoot}
+            gitBranch={gitBranch}
+            gitBranches={gitBranches}
+            gitBusy={gitBusy}
+            newBranchMode={newBranchMode}
+            newBranchName={newBranchName}
+            onBranchChange={value => {
+              if (value === '__new__') { dispatch({ type: 'SET_NEW_BRANCH_MODE', active: true }); return }
+              vscode.postMessage({ type: 'git-checkout', branch: value, isNew: false })
+            }}
+            onNewBranchNameChange={name => dispatch({ type: 'SET_NEW_BRANCH_NAME', name })}
+            onCreateBranch={() => {
+              const name = newBranchName.trim()
+              if (!name) return
+              vscode.postMessage({ type: 'git-checkout', branch: name, isNew: true })
+              dispatch({ type: 'SET_NEW_BRANCH_MODE', active: false })
+            }}
+            onCancelNewBranch={() => dispatch({ type: 'SET_NEW_BRANCH_MODE', active: false })}
+            onGitOp={gitOp as (op: 'add' | 'commit' | 'push' | 'init' | 'reset-prev' | 'reset-remote') => void}
+            t={t}
+          />
         </div>
 
-        {calendarOpen && (
-          <ScheduleCalendar
-            tasks={scheduledTasks}
-            onCancel={id => { vscode.postMessage({ type: 'cancel-scheduled-task', id }) }}
-            t={t}
-          />
-        )}
-
-        {providersOpen && providers.length > 0 && (
-          <ProvidersPanel
-            providers={providers}
-            onSave={(providerId, key) => vscode.postMessage({ type: 'save-provider-key', providerId, key })}
-            onRemove={providerId => vscode.postMessage({ type: 'remove-provider-key', providerId })}
-            onRestore={providerId => vscode.postMessage({ type: 'restore-provider-key', providerId })}
-            t={t}
-          />
-        )}
+        {/* расписание */}
+        <div style={styles.inputGroup}>
+          <button
+            style={{ ...styles.iconButton, alignSelf: 'flex-start', fontSize: 11, opacity: calendarOpen ? 1 : 0.6 }}
+            onClick={() => dispatch({ type: 'TOGGLE_CALENDAR' })}
+          >{t.calendarToggle}{scheduledTasks.length > 0 && ` (${scheduledTasks.length})`}</button>
+          {calendarOpen && (
+            <ScheduleCalendar
+              tasks={scheduledTasks}
+              onCancel={id => { vscode.postMessage({ type: 'cancel-scheduled-task', id }) }}
+              t={t}
+            />
+          )}
+        </div>
 
         {!workspaceRoot && (
           <div style={styles.noWorkspaceHint}>{t.noWorkspaceHint}</div>

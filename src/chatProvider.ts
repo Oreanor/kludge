@@ -5,22 +5,7 @@ import { ChatOrchestrator } from './services';
 import { ChatRequest } from './types';
 import { GitService } from './services/GitService';
 import { NpmService } from './services/NpmService';
-
-const CMD_RE = /<vscode-cmd>([\s\S]*?)<\/vscode-cmd>/g;
-
-function extractCmds(text: string): Array<Record<string, any>> {
-  const cmds: Array<Record<string, any>> = [];
-  let m: RegExpExecArray | null;
-  CMD_RE.lastIndex = 0;
-  while ((m = CMD_RE.exec(text)) !== null) {
-    try { cmds.push(JSON.parse(m[1])); } catch {}
-  }
-  return cmds;
-}
-
-function stripCmds(text: string): string {
-  return text.replace(/<vscode-cmd>[\s\S]*?<\/vscode-cmd>/g, '').trim();
-}
+import { extractCmds, stripCmds, listWorkspaceFiles } from './utils/vscodeCmd';
 
 const SCAN_EXCLUDE = new Set([
   'node_modules', '.git', 'dist', 'build', 'out', 'coverage',
@@ -55,6 +40,7 @@ interface ScheduledTask {
 }
 
 const SCHEDULE_KEY = 'kludge.scheduledPrompts';
+const DISABLED_PROVIDERS_KEY = 'kludge.disabledProviders';
 
 const PROVIDER_DEFS = [
   { id: 'gemini'     as const, name: 'Google Gemini', secretKey: 'kludge.provider.gemini'      },
@@ -190,7 +176,8 @@ export class ChatProvider implements vscode.WebviewViewProvider {
   private _sendModels() {
     if (!this._view?.visible) { return; }
     const models = this.orchestrator?.getAvailableModels() ?? [];
-    this._view.webview.postMessage({ type: 'models', models });
+    const disabledProviders = this._globalState.get<string[]>(DISABLED_PROVIDERS_KEY, []);
+    this._view.webview.postMessage({ type: 'models', models, disabledProviders });
   }
 
   private _sendWorkspaceTree() {
@@ -380,23 +367,6 @@ export class ChatProvider implements vscode.WebviewViewProvider {
     this._view.webview.postMessage({ type: 'scheduled-tasks', tasks });
   }
 
-  private async _listWorkspaceFiles(): Promise<string[]> {
-    const folders = vscode.workspace.workspaceFolders;
-    if (!folders?.length) { return []; }
-    const files: string[] = [];
-    for (const folder of folders) {
-      const entries = await vscode.workspace.findFiles(
-        new vscode.RelativePattern(folder, '**/*'),
-        '**/{node_modules,.git,dist,out,build,.next}/**',
-        200
-      );
-      for (const uri of entries) {
-        files.push(vscode.workspace.asRelativePath(uri, false));
-      }
-    }
-    return files;
-  }
-
   public async loadProviderKeys(): Promise<void> {
     const ENV_MAP: Record<string, string | undefined> = {
       gemini:     process.env.GEMINI_API_KEY,
@@ -450,7 +420,8 @@ export class ChatProvider implements vscode.WebviewViewProvider {
         placeholder:    (def as any).placeholder as string | undefined,
       };
     }));
-    this._view.webview.postMessage({ type: 'providers', providers });
+    const disabledProviders = this._globalState.get<string[]>(DISABLED_PROVIDERS_KEY, []);
+    this._view.webview.postMessage({ type: 'providers', providers, disabledProviders });
   }
 
   private _sendCustomPrompts() {
@@ -484,7 +455,7 @@ export class ChatProvider implements vscode.WebviewViewProvider {
           this._abortController = new AbortController();
           const signal = this._abortController.signal;
           const payload = msg.payload ?? { text: msg.text };
-          const workspaceFiles = await this._listWorkspaceFiles();
+          const workspaceFiles = await listWorkspaceFiles();
           const request: ChatRequest = payload.text
             ? {
                 conversationId: payload.conversationId ?? 'default',
@@ -618,6 +589,17 @@ export class ChatProvider implements vscode.WebviewViewProvider {
           if (key) { await this._applyKey(def.id, key); }
           await this._sendProviders();
           this._sendModels();
+          break;
+        }
+
+        case 'toggle-provider': {
+          const pid = String(msg.providerId ?? '');
+          if (!pid) { break; }
+          const disabled = new Set(this._globalState.get<string[]>(DISABLED_PROVIDERS_KEY, []));
+          if (disabled.has(pid)) { disabled.delete(pid); } else { disabled.add(pid); }
+          await this._globalState.update(DISABLED_PROVIDERS_KEY, [...disabled]);
+          this._sendModels();
+          await this._sendProviders();
           break;
         }
 
