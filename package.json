@@ -12,29 +12,63 @@
   "main": "./dist/extension.js",
   "contributes": {
     "commands": [
-      { "command": "kludge.helloWorld",        "title": "Hello World" },
-      { "command": "kludge.testStream",        "title": "Kludge Code: Test Stream" },
-      { "command": "kludge.openChat",          "title": "Kludge Code: Open Chat" },
-      { "command": "kludge.sendMessage",       "title": "Kludge Code: Send Message" },
-      { "command": "kludge.openPreview",       "title": "Kludge Code: Open Preview",   "icon": "$(browser)" },
-      { "command": "kludge.reloadPreview",     "title": "Kludge Code: Reload Preview", "icon": "$(refresh)" },
-      { "command": "kludge.pickElement",       "title": "Kludge Code: Pick Element",   "icon": "$(inspect)" },
-      { "command": "kludge.setAnthropicKey",   "title": "Kludge Code: Set Anthropic API Key" },
-      { "command": "kludge.clearAnthropicKey", "title": "Kludge Code: Clear Anthropic API Key" }
+      {
+        "command": "kludge.helloWorld",
+        "title": "Hello World"
+      },
+      {
+        "command": "kludge.testStream",
+        "title": "Kludge Code: Test Stream"
+      },
+      {
+        "command": "kludge.openChat",
+        "title": "Kludge Code: Open Chat"
+      },
+      {
+        "command": "kludge.sendMessage",
+        "title": "Kludge Code: Send Message"
+      },
+      {
+        "command": "kludge.openPreview",
+        "title": "Kludge Code: Open Preview",
+        "icon": "$(browser)"
+      },
+      {
+        "command": "kludge.reloadPreview",
+        "title": "Kludge Code: Reload Preview",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "kludge.pickElement",
+        "title": "Kludge Code: Pick Element",
+        "icon": "$(inspect)"
+      },
+      {
+        "command": "kludge.setAnthropicKey",
+        "title": "Kludge Code: Set Anthropic API Key"
+      },
+      {
+        "command": "kludge.clearAnthropicKey",
+        "title": "Kludge Code: Clear Anthropic API Key"
+      }
     ],
-   "viewsContainers": {
-      "activitybar": [{
-        "id": "kludge-sidebar",
-        "title": "Kludge Code",
-        "icon": "$(flame)"
-      }]
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "kludge-sidebar",
+          "title": "Kludge Code",
+          "icon": "$(flame)"
+        }
+      ]
     },
     "views": {
-      "kludge-sidebar": [{
-        "type": "webview",
-        "id": "kludge.chatView",
-        "name": "Chat"
-      }]
+      "kludge-sidebar": [
+        {
+          "type": "webview",
+          "id": "kludge.chatView",
+          "name": "Chat"
+        }
+      ]
     },
     "configuration": {
       "title": "Kludge Code",
@@ -45,10 +79,19 @@
           "description": "Custom quick prompts shown in the action dropdown.",
           "items": {
             "type": "object",
-            "required": ["label", "text"],
+            "required": [
+              "label",
+              "text"
+            ],
             "properties": {
-              "label": { "type": "string", "description": "Short action name shown in the dropdown." },
-              "text":  { "type": "string", "description": "Prompt text sent to the model." }
+              "label": {
+                "type": "string",
+                "description": "Short action name shown in the dropdown."
+              },
+              "text": {
+                "type": "string",
+                "description": "Prompt text sent to the model."
+              }
             }
           }
         }
@@ -86,7 +129,11 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.90.0",
     "@google/generative-ai": "^0.24.1",
+    "@types/react-syntax-highlighter": "^15.5.13",
     "dotenv": "^17.4.2",
-    "ollama": "^0.6.3"
+    "lucide-react": "^1.11.0",
+    "ollama": "^0.6.3",
+    "react-markdown": "^10.1.0",
+    "react-syntax-highlighter": "^16.1.1"
   }
 }

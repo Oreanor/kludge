@@ -11,7 +11,10 @@ import ElementChip from './components/ElementChip'
 import ScheduleCalendar from './components/ScheduleCalendar'
 import ProvidersPanel from './components/ProvidersPanel'
 import ModelBar from './components/ModelBar'
-import SessionTabs from './components/SessionTabs'
+import SessionTabs, { TELEGRAM_SESSION_ID } from './components/SessionTabs'
+import TelegramSettings from './components/TelegramSettings'
+import IconSearch from './components/IconSearch'
+import UIComponentPicker from './components/UIComponentPicker'
 
 declare const acquireVsCodeApi: () => { postMessage: (msg: unknown) => void }
 const vscode = acquireVsCodeApi()
@@ -27,7 +30,10 @@ export default function App() {
     customPrompts, newPromptMode,
     scheduledTasks, calendarOpen,
     providers, providersOpen,
+    telegramConfigured, telegramSettingsOpen, telegramChatId,
   } = state
+
+  const isTelegramTab = activeSessionId === TELEGRAM_SESSION_ID
 
   const t = getStrings(locale)
   const builtinPrompts = [
@@ -127,7 +133,7 @@ export default function App() {
                 text: m.content ?? '',
               }))
             : []
-          dispatch({ type: 'HISTORY_LOADED', messages: msgs })
+          dispatch({ type: 'HISTORY_LOADED', messages: msgs, conversationId: msg.conversationId })
           break
         }
         case 'user-message': {
@@ -136,15 +142,18 @@ export default function App() {
             from === 'Preview Picker' ? 'preview-picker'
             : from.startsWith('@') || msg.source === 'telegram' ? 'telegram'
             : 'extension'
-          dispatch({ type: 'EXT_USER_MESSAGE', text: msg.text ?? '', source })
+          dispatch({ type: 'EXT_USER_MESSAGE', text: msg.text ?? '', source, conversationId: msg.conversationId })
           break
         }
-        case 'stream-start': dispatch({ type: 'STREAM_START' }); break
-        case 'delta': dispatch({ type: 'STREAM_DELTA', delta: String(msg.delta ?? '') }); break
-        case 'done':
-        case 'stopped': dispatch({ type: 'STREAM_DONE' }); break
+        case 'telegram-config':
+          dispatch({ type: 'SET_TELEGRAM_CONFIG', configured: !!msg.configured, chatId: typeof msg.chatId === 'string' ? msg.chatId : undefined })
+          break
+        case 'stream-start': dispatch({ type: 'STREAM_START', conversationId: msg.conversationId }); break
+        case 'delta': dispatch({ type: 'STREAM_DELTA', delta: String(msg.delta ?? ''), conversationId: msg.conversationId }); break
+        case 'done': dispatch({ type: 'STREAM_DONE', conversationId: msg.conversationId }); break
+        case 'stopped': dispatch({ type: 'STREAM_STOPPED', conversationId: msg.conversationId }); break
         case 'response': dispatch({ type: 'RESPONSE', text: String(msg.text ?? '') }); break
-        case 'error': dispatch({ type: 'STREAM_ERROR', error: msg.error ?? 'Error' }); break
+        case 'error': dispatch({ type: 'STREAM_ERROR', error: msg.error ?? 'Error', conversationId: msg.conversationId }); break
         case 'picked-element':
           if (msg.data) dispatch({ type: 'SET_PICKED_ELEMENT', element: msg.data })
           break
@@ -159,13 +168,11 @@ export default function App() {
           break
         case 'sessions':
           if (Array.isArray(msg.sessions)) {
-            dispatch({ type: 'SET_SESSIONS', sessions: msg.sessions })
-            if (msg.activeSessionId) dispatch({ type: 'SWITCH_SESSION', sessionId: msg.activeSessionId })
-            dispatch({ type: 'SET_BUSY_SESSION', sessionId: msg.busySessionId ?? null })
+            dispatch({ type: 'SET_SESSIONS', sessions: msg.sessions, activeSessionId: msg.activeSessionId, busySessionId: msg.busySessionId ?? null })
           }
           break
         case 'session-busy':
-          dispatch({ type: 'SET_BUSY_SESSION', sessionId: msg.workingSession?.id ?? null })
+          // busySessionId is derived from streaming state; this event is informational only
           break
         case 'patch-last-message':
           if (typeof msg.text === 'string') dispatch({ type: 'PATCH_LAST_MESSAGE', text: msg.text })
@@ -179,11 +186,14 @@ export default function App() {
 
   const send = () => {
     if (!input.trim() || isStreaming) return
+    if (isTelegramTab && !telegramConfigured) return
+    const ts = Date.now()
     const text = input.trim()
     lastUserInputRef.current = text
 
     const displayText = pickedElement ? `${text}\n\`${pickedElement.selector}\`` : text
-    dispatch({ type: 'USER_MESSAGE_SENT', displayText })
+    dispatch({ type: 'USER_MESSAGE_SENT', displayText, ts })
+    dispatch({ type: 'SET_INPUT', value: '' })
 
     let fullText = text
     if (pickedElement) {
@@ -199,6 +209,7 @@ export default function App() {
 
     vscode.postMessage({
       type: 'send',
+      snapshotTs: ts,
       payload: {
         text: fullText,
         modelId: selectedModel !== 'auto' ? selectedModel : undefined,
@@ -274,11 +285,27 @@ export default function App() {
         sessions={sessions}
         activeSessionId={activeSessionId}
         busySessionId={busySessionId}
+        telegramConfigured={telegramConfigured}
         onSwitch={switchSession}
         onNew={() => vscode.postMessage({ type: 'new-session' })}
         onClose={id => vscode.postMessage({ type: 'close-session', sessionId: id })}
       />
-      <ChatMessages messages={messages} t={t} bottomRef={bottomRef} />
+      {isTelegramTab && (
+        <TelegramSettings
+          configured={telegramConfigured}
+          settingsOpen={telegramSettingsOpen}
+          chatId={telegramChatId}
+          onToggle={() => dispatch({ type: 'TOGGLE_TELEGRAM_SETTINGS' })}
+          onSave={(token, chatId) => vscode.postMessage({ type: 'save-telegram-config', token, chatId })}
+          t={t}
+        />
+      )}
+      <ChatMessages
+        messages={messages}
+        t={t}
+        bottomRef={bottomRef}
+        onRestoreSnapshot={id => vscode.postMessage({ type: 'restore-snapshot', ts: Number(id.replace('user-', '')) })}
+      />
 
       {busySessionId && busySessionId !== activeSessionId && (
         <div style={styles.sessionBusyBanner}>
@@ -287,6 +314,15 @@ export default function App() {
       )}
 
       <div style={styles.inputRow}>
+
+        {/* поиск иконок + UI компоненты */}
+        <IconSearch
+          onPick={name => dispatch({ type: 'SET_INPUT', value: (input ? input + ' ' : '') + `\`<${name} />\`` })}
+          t={t}
+        />
+        <UIComponentPicker
+          onPick={text => dispatch({ type: 'SET_INPUT', value: (input ? input + ' ' : '') + text })}
+        />
 
         {/* чат */}
         <div style={styles.inputGroup}>
@@ -298,6 +334,7 @@ export default function App() {
           <ChatInput
             input={input}
             isStreaming={isStreaming}
+            disabled={isTelegramTab && !telegramConfigured}
             textareaRef={textareaRef}
             onChange={value => { dispatch({ type: 'SET_INPUT', value }); resizeTextarea() }}
             onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } }}

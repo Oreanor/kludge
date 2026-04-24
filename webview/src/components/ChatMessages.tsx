@@ -9,9 +9,10 @@ interface Props {
   messages: Message[]
   t: I18n
   bottomRef: React.RefObject<HTMLDivElement | null>
+  onRestoreSnapshot: (messageId: string) => void
 }
 
-export default function ChatMessages({ messages, t, bottomRef }: Props) {
+export default function ChatMessages({ messages, t, bottomRef, onRestoreSnapshot }: Props) {
   return (
     <div style={styles.messages}>
       {messages.length === 0 && (
@@ -26,7 +27,7 @@ export default function ChatMessages({ messages, t, bottomRef }: Props) {
           key={m.id}
           style={
             m.role === 'user'
-              ? { ...styles.bubble, ...styles.user, ...(m.source === 'telegram' ? styles.telegramUser : {}) }
+              ? { ...styles.bubble, ...styles.user, ...(m.source === 'telegram' ? styles.telegramUser : {}), position: 'relative' }
               : { ...styles.bubble, ...styles.assistant }
           }
         >
@@ -96,6 +97,15 @@ export default function ChatMessages({ messages, t, bottomRef }: Props) {
             </ReactMarkdown>
             {m.id === STREAMING_ID && <span style={styles.cursor}>▋</span>}
           </span>
+          {m.role === 'user' && m.id.startsWith('user-') && (
+            <button
+              title="Восстановить файлы до этого запроса"
+              onClick={() => onRestoreSnapshot(m.id)}
+              style={styles.restoreBtn}
+            >
+              ↩
+            </button>
+          )}
         </div>
       ))}
       <div ref={bottomRef} />

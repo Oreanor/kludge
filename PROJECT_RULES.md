@@ -95,6 +95,3 @@ Short, actionable rules to keep the codebase consistent for humans and agents.
 - New features start with: which data types are needed?
 - Integrations start with: which adapter and contract?
 - UI pieces start with: which states and events?
-
----
-Place this file at the repository root as `PROJECT_RULES.md`.

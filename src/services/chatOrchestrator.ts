@@ -1,7 +1,8 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
-import { ChatRequest, ChatMessage } from '../types';
+import { ChatRequest, ChatMessage, ApiMsg } from '../types';
+import { FILE_SIZE_LIMIT, TOTAL_FILES_LIMIT } from '../constants';
 import { HistoryService } from './history';
 import { GeminiProvider } from '../providers/GeminiProvider';
 import { GroqProvider } from '../providers/GroqProvider';
@@ -12,11 +13,6 @@ import { MistralProvider } from '../providers/MistralProvider';
 import { OpenAIProvider } from '../providers/OpenAIProvider';
 import { OllamaProvider } from '../providers/OllamaProvider';
 import { ALL_MODELS, ModelProvider, getModelDescriptor, resolveAutoModel } from './modelRouter';
-
-type ApiMsg = { role: 'user' | 'assistant'; content: string };
-
-const FILE_SIZE_LIMIT   = 8_000;  // chars per file before truncation
-const TOTAL_FILES_LIMIT = 40_000; // chars across all requested files
 
 export class ChatOrchestrator {
   private gemini?: GeminiProvider;
@@ -91,7 +87,7 @@ export class ChatOrchestrator {
     ];
   }
 
-  getHistory(conversationId: string): ChatMessage[] {
+  private getHistory(conversationId: string): ChatMessage[] {
     return this.history?.getHistory(conversationId) ?? [];
   }
 
@@ -99,7 +95,7 @@ export class ChatOrchestrator {
     await this.history?.clearHistory(conversationId);
   }
 
-  async loadFileIfNeeded(conversationId: string, filePath: string): Promise<string | undefined> {
+  private async loadFileIfNeeded(conversationId: string, filePath: string): Promise<string | undefined> {
     if (!this.history) { return undefined; }
     const cached = this.history.getCachedFile(conversationId, filePath);
     if (cached !== undefined) { return cached; }
@@ -184,7 +180,7 @@ export class ChatOrchestrator {
     console.log(`[Kludge] Using model: ${modelId} (${provider ?? 'unknown'})`);
 
     // ── echo fallback ────────────────────────────────────────────────────────
-    if (!provider || (!this.gemini && !this.groq && !this.openrouter && !this.anthropic && !this.deepseek && !this.mistral && !this.openai && !this.ollama)) {
+    if (!provider || this.availableProviders.size === 0) {
       const assembled = `[Echo — нет доступных провайдеров] ${userMsg?.content ?? ''}`;
       for (const chunk of assembled.split(/(\s+)/)) {
         if (signal?.aborted) { return; }

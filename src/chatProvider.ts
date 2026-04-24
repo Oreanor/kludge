@@ -2,62 +2,22 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
 import { ChatOrchestrator } from './services';
-import { ChatRequest } from './types';
+import { ChatRequest, StoredSession, DisplayPair } from './types';
+import {
+  ACTIVE_SESSION_KEY, DISABLED_PROVIDERS_KEY, FILE_PATH_RE,
+  MAX_DISPLAY_PAIRS, SESSIONS_KEY, TELEGRAM_CHAT_ID_KEY,
+  TELEGRAM_SESSION_ID, TELEGRAM_TOKEN_KEY,
+} from './constants';
 import { GitService } from './services/GitService';
 import { NpmService } from './services/NpmService';
+import { TelegramService } from './services/telegramService';
+import { SchedulerService } from './services/SchedulerService';
+import { ProviderManager } from './services/ProviderManager';
+import { scanFolders } from './utils/folderScanner';
+import { getNonce } from './utils/nonce';
 import { extractCmds, stripCmds, listWorkspaceFiles } from './utils/vscodeCmd';
 
-const SCAN_EXCLUDE = new Set([
-  'node_modules', '.git', 'dist', 'build', 'out', 'coverage',
-  '.next', '.nuxt', '.cache', '__pycache__', '.vscode', '.idea',
-]);
-
-function scanFolders(
-  root: string,
-  rel: string,
-  depth: number,
-  maxDepth: number,
-): Array<{ name: string; path: string; depth: number }> {
-  if (depth > maxDepth) { return []; }
-  const result: Array<{ name: string; path: string; depth: number }> = [];
-  try {
-    const entries = fs.readdirSync(path.join(root, rel), { withFileTypes: true });
-    for (const e of entries) {
-      if (!e.isDirectory() || SCAN_EXCLUDE.has(e.name) || e.name.startsWith('.')) { continue; }
-      const relPath = rel ? `${rel}/${e.name}` : e.name;
-      result.push({ name: e.name, path: relPath, depth });
-      result.push(...scanFolders(root, relPath, depth + 1, maxDepth));
-    }
-  } catch {}
-  return result;
-}
-
-interface ScheduledTask {
-  id: string
-  text: string
-  scheduledAt: number
-  completedAt?: number
-}
-
-const SCHEDULE_KEY = 'kludge.scheduledPrompts';
-const DISABLED_PROVIDERS_KEY = 'kludge.disabledProviders';
-const SESSIONS_KEY = 'kludge.sessions';
-const ACTIVE_SESSION_KEY = 'kludge.activeSession';
-
-interface StoredSession { id: string; name: string; createdAt: number }
-
-const FILE_PATH_RE = /`([^`\s]+\.[a-zA-Z]{1,6})`/g;
-
-const PROVIDER_DEFS = [
-  { id: 'gemini'     as const, name: 'Google Gemini', secretKey: 'kludge.provider.gemini'      },
-  { id: 'groq'       as const, name: 'Groq',          secretKey: 'kludge.provider.groq'        },
-  { id: 'openrouter' as const, name: 'OpenRouter',    secretKey: 'kludge.provider.openrouter'  },
-  { id: 'anthropic'  as const, name: 'Anthropic',     secretKey: 'kludge.provider.anthropic'   },
-  { id: 'deepseek'   as const, name: 'DeepSeek',      secretKey: 'kludge.provider.deepseek'    },
-  { id: 'mistral'    as const, name: 'Mistral',       secretKey: 'kludge.provider.mistral'     },
-  { id: 'openai'     as const, name: 'OpenAI',        secretKey: 'kludge.provider.openai'      },
-  { id: 'ollama'     as const, name: 'Ollama (local)', secretKey: 'kludge.provider.ollama', placeholder: 'http://localhost:11434' },
-];
+function displayKey(sessionId: string) { return `kludge.display.${sessionId}`; }
 
 export class ChatProvider implements vscode.WebviewViewProvider {
   public static readonly viewId = 'kludge.chatView';
@@ -69,15 +29,29 @@ export class ChatProvider implements vscode.WebviewViewProvider {
   private _isReady = false;
   private _git?: GitService;
   private _npm?: NpmService;
-  private _softRemoved = new Set<string>(); // visually removed but key still in SecretStorage
   private _activeWork: { sessionId: string; sessionName: string; files: Set<string> } | null = null;
+  private _telegram?: TelegramService;
+  private _scheduler!: SchedulerService;
+  private _providers!: ProviderManager;
 
   constructor(
     private readonly _extensionUri: vscode.Uri,
     private readonly _globalState: vscode.Memento,
     private readonly _secrets: vscode.SecretStorage,
     private readonly orchestrator?: ChatOrchestrator
-  ) {}
+  ) {
+    this._scheduler = new SchedulerService(
+      _globalState,
+      text => this._sendScheduledPrompt(text),
+      () => this._sendScheduledTasks(),
+    );
+    this._providers = new ProviderManager(
+      _secrets,
+      _globalState,
+      orchestrator,
+      msg => this._view?.webview.postMessage(msg),
+    );
+  }
 
   get isVisible(): boolean {
     return this._view?.visible ?? false;
@@ -109,7 +83,8 @@ export class ChatProvider implements vscode.WebviewViewProvider {
       this._sendActiveFile();
       this._sendCustomPrompts();
       this._sendScheduledTasks();
-      void this._sendProviders();
+      void this._providers.sendProviders();
+      void this._sendTelegramConfig();
       void this._git?.sendInfo(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '');
     };
 
@@ -169,15 +144,75 @@ export class ChatProvider implements vscode.WebviewViewProvider {
     this._view.webview.postMessage({ type: 'locale', locale: vscode.env.language });
   }
 
-  private _sendHistory(conversationId?: string) {
-    if (!this._view?.visible || !this.orchestrator) { return; }
-    const id = conversationId ?? this._globalState.get<string>(ACTIVE_SESSION_KEY, 'default');
+  public async loadTelegramConfig(): Promise<void> {
+    await this._initTelegram();
+  }
+
+  private async _initTelegram(): Promise<void> {
+    this._telegram?.stopPolling();
+    this._telegram = undefined;
+    const token = await this._secrets.get(TELEGRAM_TOKEN_KEY);
+    const chatId = this._globalState.get<string>(TELEGRAM_CHAT_ID_KEY, '');
+    if (!token || !chatId) { return; }
+    this._telegram = new TelegramService(token, chatId);
+    this._telegram.startPolling((text, from) => this._handleTelegramIncoming(text, from));
+  }
+
+  private async _sendTelegramConfig(): Promise<void> {
+    if (!this._view?.visible) { return; }
+    const token = await this._secrets.get(TELEGRAM_TOKEN_KEY);
+    const chatId = this._globalState.get<string>(TELEGRAM_CHAT_ID_KEY, '');
+    this._view.webview.postMessage({ type: 'telegram-config', configured: !!(token && chatId), chatId: chatId ?? '' });
+  }
+
+  private async _handleTelegramIncoming(text: string, from: string): Promise<void> {
+    this.postMessage({ type: 'user-message', text, from, source: 'telegram', conversationId: TELEGRAM_SESSION_ID });
+    if (!this.orchestrator) { return; }
+
+    const request: ChatRequest = {
+      conversationId: TELEGRAM_SESSION_ID,
+      messages: [{ id: `tg-${Date.now()}`, role: 'user', content: text, createdAt: Date.now() }],
+      context: { taskKind: 'chat' },
+      modelId: 'default',
+    };
+
+    this.postMessage({ type: 'stream-start', conversationId: TELEGRAM_SESSION_ID });
     try {
-      const hist = this.orchestrator.getHistory(id);
-      this._view.webview.postMessage({ type: 'history', conversationId: id, messages: hist ?? [] });
-    } catch (e) {
-      console.error('[Kludge] ChatProvider: failed to send history', e);
+      let assembled = '';
+      await this.orchestrator.streamChatResponse(request, delta => {
+        assembled += delta;
+        this.postMessage({ type: 'delta', delta, conversationId: TELEGRAM_SESSION_ID });
+      });
+      if (assembled) {
+        const display = stripCmds(assembled) || assembled;
+        await this._appendDisplayPair(TELEGRAM_SESSION_ID, text, display);
+        this.postMessage({ type: 'done', conversationId: TELEGRAM_SESSION_ID });
+        await this._telegram?.send(assembled);
+      }
+    } catch (e: any) {
+      this.postMessage({ type: 'error', error: String(e), conversationId: TELEGRAM_SESSION_ID });
     }
+  }
+
+  private _sendHistory(conversationId?: string) {
+    if (!this._view?.visible) { return; }
+    const id = conversationId ?? this._globalState.get<string>(ACTIVE_SESSION_KEY, 'default');
+    const pairs = this._globalState.get<DisplayPair[]>(displayKey(id), []);
+    const messages: Array<{ role: 'user' | 'assistant'; content: string }> = [];
+    for (const p of pairs) {
+      messages.push({ role: 'user', content: p.user });
+      messages.push({ role: 'assistant', content: p.assistant });
+    }
+    this._view.webview.postMessage({ type: 'history', conversationId: id, messages });
+  }
+
+  private async _appendDisplayPair(sessionId: string, user: string, assistant: string): Promise<void> {
+    const pairs = this._globalState.get<DisplayPair[]>(displayKey(sessionId), []);
+    await this._globalState.update(displayKey(sessionId), [...pairs, { user, assistant }].slice(-MAX_DISPLAY_PAIRS));
+  }
+
+  private async _clearDisplayHistory(sessionId: string): Promise<void> {
+    await this._globalState.update(displayKey(sessionId), undefined);
   }
 
   private _getSessions(): StoredSession[] {
@@ -203,7 +238,7 @@ export class ChatProvider implements vscode.WebviewViewProvider {
   private _sendModels() {
     if (!this._view?.visible) { return; }
     const models = this.orchestrator?.getAvailableModels() ?? [];
-    const disabledProviders = this._globalState.get<string[]>(DISABLED_PROVIDERS_KEY, []);
+    const disabledProviders = this._providers.getDisabledProviders();
     this._view.webview.postMessage({ type: 'models', models, disabledProviders });
   }
 
@@ -240,12 +275,12 @@ export class ChatProvider implements vscode.WebviewViewProvider {
 
     await this.postMessageWhenReady({ type: 'user-message', text, from: 'Scheduled' });
 
-    const request: import('./types').ChatRequest = {
+    const request: ChatRequest = {
       conversationId: 'default',
       messages: [{ id: `user-${Date.now()}`, role: 'user', content: text, createdAt: Date.now() }],
       context: { taskKind: 'chat' },
       modelId: 'default',
-      systemExtra: this.getScheduledContext(),
+      systemExtra: this._scheduler.getScheduledContext(),
     };
 
     this._view?.webview.postMessage({ type: 'stream-start', conversationId: 'default' });
@@ -256,10 +291,11 @@ export class ChatProvider implements vscode.WebviewViewProvider {
         const folder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
         await this.orchestrator.streamChatResponse(request, delta => {
           assembled += delta;
-          if (!signal.aborted) { this._view?.webview.postMessage({ type: 'delta', delta }); }
+          if (!signal.aborted) { this._view?.webview.postMessage({ type: 'delta', delta, conversationId: 'default' }); }
         }, signal);
         if (!signal.aborted) {
           await this._processAssembled(assembled, folder);
+          await this._appendDisplayPair('default', text, stripCmds(assembled) || assembled);
           this._view?.webview.postMessage({ type: 'done', conversationId: 'default' });
         }
       } catch (e: any) {
@@ -271,74 +307,51 @@ export class ChatProvider implements vscode.WebviewViewProvider {
   }
 
   public async restoreScheduledTasks(): Promise<void> {
-    let tasks = this._globalState.get<ScheduledTask[]>(SCHEDULE_KEY, []);
-    if (tasks.length === 0) { return; }
+    await this._scheduler.restoreScheduledTasks();
+  }
 
-    // Удаляем выполненные задачи старше 7 дней
-    const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
-    const cleaned = tasks.filter(t => !t.completedAt || t.completedAt > sevenDaysAgo);
-    if (cleaned.length !== tasks.length) {
-      await this._globalState.update(SCHEDULE_KEY, cleaned);
-      tasks = cleaned;
+  private _sendScheduledTasks(): void {
+    if (!this._view?.visible) { return; }
+    this._view.webview.postMessage({ type: 'scheduled-tasks', tasks: this._scheduler.getTasks() });
+  }
+
+  public async loadProviderKeys(): Promise<void> {
+    await this._providers.loadProviderKeys();
+  }
+
+  private async _takeSnapshot(ts: number): Promise<void> {
+    const folder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    if (!folder) { return; }
+    const files: Array<{ path: string; content: string }> = [];
+    for (const doc of vscode.workspace.textDocuments) {
+      if (doc.uri.scheme !== 'file' || !doc.uri.fsPath.startsWith(folder)) { continue; }
+      files.push({ path: doc.uri.fsPath, content: doc.getText() });
     }
+    if (files.length === 0) { return; }
+    const snapshots = this._globalState.get<Array<{ ts: number; files: typeof files }>>('kludge.snapshots', []);
+    await this._globalState.update('kludge.snapshots', [...snapshots.slice(-14), { ts, files }]);
+  }
 
-    const endOfToday = new Date();
-    endOfToday.setHours(23, 59, 59, 999);
-
-    const pending = tasks.filter(t => !t.completedAt);
-    const todayOrPastPending = pending.filter(t => t.scheduledAt <= endOfToday.getTime());
-    const futurePending      = pending.filter(t => t.scheduledAt >  endOfToday.getTime());
-
-    for (const task of futurePending) { this._armTask(task); }
-
-    if (todayOrPastPending.length === 0) { return; }
-
-    const fmt = (task: ScheduledTask) => {
-      const preview = task.text.length > 40 ? task.text.slice(0, 40) + '…' : task.text;
-      const time = new Date(task.scheduledAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      return `«${preview}» в ${time}`;
-    };
-    const list = todayOrPastPending.map(fmt).join(', ');
-    const msg = `На сегодня нашёл задачи — ${list}`;
-    const choice = await vscode.window.showInformationMessage(msg, 'Оставить', 'Отменить');
-
-    if (choice === 'Отменить') {
-      for (const task of todayOrPastPending) { await this._removeTask(task.id); }
-    } else {
-      for (const task of todayOrPastPending) { this._armTask(task); }
+  private async _restoreSnapshot(ts: number): Promise<void> {
+    const snapshots = this._globalState.get<Array<{ ts: number; files: Array<{ path: string; content: string }> }>>('kludge.snapshots', []);
+    const snap = snapshots.find(s => s.ts === ts);
+    if (!snap || snap.files.length === 0) {
+      vscode.window.showWarningMessage('Снапшот не найден — файлы не изменялись или история была очищена');
+      return;
     }
-  }
-
-  private _armTask(task: ScheduledTask): void {
-    const delay = task.scheduledAt - Date.now();
-    const fire = async () => {
-      await this._markTaskDone(task.id);
-      await this._sendScheduledPrompt(task.text);
-    };
-    if (delay <= 0) {
-      void fire();
-    } else {
-      setTimeout(() => void fire(), Math.min(delay, 2_147_483_647));
+    const choice = await vscode.window.showInformationMessage(
+      `Восстановить ${snap.files.length} файл${snap.files.length === 1 ? '' : snap.files.length < 5 ? 'а' : 'ов'} до состояния перед этим запросом?`,
+      { modal: true }, 'Восстановить', 'Отмена',
+    );
+    if (choice !== 'Восстановить') { return; }
+    let count = 0;
+    for (const file of snap.files) {
+      try {
+        await vscode.workspace.fs.writeFile(vscode.Uri.file(file.path), Buffer.from(file.content, 'utf8'));
+        count++;
+      } catch {}
     }
-  }
-
-  private async _markTaskDone(id: string): Promise<void> {
-    const tasks = this._globalState.get<ScheduledTask[]>(SCHEDULE_KEY, []);
-    const updated = tasks.map(t => t.id === id ? { ...t, completedAt: Date.now() } : t);
-    await this._globalState.update(SCHEDULE_KEY, updated);
-    this._sendScheduledTasks();
-  }
-
-  private async _saveTask(task: ScheduledTask): Promise<void> {
-    const tasks = this._globalState.get<ScheduledTask[]>(SCHEDULE_KEY, []).filter(t => t.id !== task.id);
-    await this._globalState.update(SCHEDULE_KEY, [...tasks, task]);
-    this._sendScheduledTasks();
-  }
-
-  private async _removeTask(id: string): Promise<void> {
-    const tasks = this._globalState.get<ScheduledTask[]>(SCHEDULE_KEY, []).filter(t => t.id !== id);
-    await this._globalState.update(SCHEDULE_KEY, tasks);
-    this._sendScheduledTasks();
+    vscode.window.showInformationMessage(`Восстановлено ${count} файлов`);
   }
 
   private async _executeVscodeCmd(cmd: Record<string, any>, folder: string): Promise<void> {
@@ -357,98 +370,8 @@ export class ChatProvider implements vscode.WebviewViewProvider {
     for (const cmd of cmds) { await this._executeVscodeCmd(cmd, folder); }
   }
 
-  public async executeVscodeCmds(cmds: Array<Record<string, any>>, folder: string): Promise<void> {
+  private async executeVscodeCmds(cmds: Array<Record<string, any>>, folder: string): Promise<void> {
     for (const cmd of cmds) { await this._executeVscodeCmd(cmd, folder); }
-  }
-
-  public getScheduledContext(): string | undefined {
-    const tasks = this._globalState.get<ScheduledTask[]>(SCHEDULE_KEY, []);
-    if (tasks.length === 0) { return undefined; }
-
-    const pending   = tasks.filter(t => !t.completedAt).sort((a, b) => a.scheduledAt - b.scheduledAt);
-    const completed = tasks.filter(t =>  t.completedAt).sort((a, b) => (a.completedAt ?? 0) - (b.completedAt ?? 0));
-
-    const preview = (t: ScheduledTask) => t.text.length > 80 ? t.text.slice(0, 80) + '…' : t.text;
-    const hm = (ts: number) => new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-
-    const lines: string[] = [];
-
-    if (pending.length > 0) {
-      lines.push('Предстоящие задачи:');
-      for (const t of pending) {
-        lines.push(`- «${preview(t)}» — ${new Date(t.scheduledAt).toLocaleString()}`);
-      }
-    }
-    if (completed.length > 0) {
-      lines.push('Выполненные задачи (сегодня):');
-      for (const t of completed) {
-        lines.push(`- ✓ «${preview(t)}» — запланировано на ${hm(t.scheduledAt)}, выполнено в ${hm(t.completedAt!)}`);
-      }
-    }
-    return lines.length > 0 ? lines.join('\n') : undefined;
-  }
-
-  private _sendScheduledTasks(): void {
-    if (!this._view?.visible) { return; }
-    const tasks = this._globalState.get<ScheduledTask[]>(SCHEDULE_KEY, []);
-    this._view.webview.postMessage({ type: 'scheduled-tasks', tasks });
-  }
-
-  public async loadProviderKeys(): Promise<void> {
-    const ENV_MAP: Record<string, string | undefined> = {
-      gemini:     process.env.GEMINI_API_KEY,
-      groq:       process.env.GROQ_API_KEY,
-      openrouter: process.env.OPENROUTER_API_KEY,
-      anthropic:  process.env.ANTHROPIC_API_KEY,
-      deepseek:   process.env.DEEPSEEK_API_KEY,
-      mistral:    process.env.MISTRAL_API_KEY,
-      openai:     process.env.OPENAI_API_KEY,
-    };
-    for (const def of PROVIDER_DEFS) {
-      const stored = await this._secrets.get(def.secretKey);
-      const envKey = ENV_MAP[def.id];
-
-      // migrate from .env on first run
-      if (envKey && !stored) {
-        await this._secrets.store(def.secretKey, envKey);
-      }
-
-      const key = stored ?? envKey;
-      if (key && this.orchestrator) { await this._applyKey(def.id, key); }
-    }
-  }
-
-  private async _applyKey(id: string, key: string): Promise<void> {
-    if (!this.orchestrator) { return; }
-    if (id === 'gemini')     { this.orchestrator.setGeminiKey(key); }
-    if (id === 'groq')       { this.orchestrator.setGroqKey(key); }
-    if (id === 'openrouter') { this.orchestrator.setOpenRouterKey(key); }
-    if (id === 'anthropic')  { this.orchestrator.setAnthropicKey(key); }
-    if (id === 'deepseek')   { this.orchestrator.setDeepSeekKey(key); }
-    if (id === 'mistral')    { this.orchestrator.setMistralKey(key); }
-    if (id === 'openai')     { this.orchestrator.setOpenAIKey(key); }
-    if (id === 'ollama')     { await this.orchestrator.setOllamaUrl(key); }
-  }
-
-  private async _sendProviders(): Promise<void> {
-    if (!this._view?.visible) { return; }
-    const providers = await Promise.all(PROVIDER_DEFS.map(async def => {
-      const key = await this._secrets.get(def.secretKey);
-      const soft = this._softRemoved.has(def.id);
-      const isUrl = def.id === 'ollama';
-      const mask = (k: string) => isUrl ? k : '••••' + k.slice(-4);
-      return {
-        id:             def.id,
-        name:           def.name,
-        configured:     !!key && !soft,
-        maskedKey:      key && !soft ? mask(key) : undefined,
-        pendingRemoval: soft && !!key,
-        pendingMasked:  soft && key ? mask(key) : undefined,
-        placeholder:    (def as any).placeholder as string | undefined,
-      };
-    }));
-    const disabledProviders = this._globalState.get<string[]>(DISABLED_PROVIDERS_KEY, []);
-    this._view.webview.postMessage({ type: 'providers', providers, disabledProviders });
   }
 
   private _sendCustomPrompts() {
@@ -478,6 +401,7 @@ export class ChatProvider implements vscode.WebviewViewProvider {
       switch (msg?.type) {
 
         case 'send': {
+          if (msg.snapshotTs) { void this._takeSnapshot(Number(msg.snapshotTs)); }
           this._abortController?.abort();
           this._abortController = new AbortController();
           const signal = this._abortController.signal;
@@ -485,7 +409,6 @@ export class ChatProvider implements vscode.WebviewViewProvider {
           const sessionId = payload.conversationId ?? 'default';
           const workspaceFiles = await listWorkspaceFiles();
 
-          // ── work-conflict detection ──────────────────────────────────
           if (this._activeWork && this._activeWork.sessionId !== sessionId) {
             const overlap = payload.context?.activeFile
               ? this._activeWork.files.has(payload.context.activeFile)
@@ -497,7 +420,6 @@ export class ChatProvider implements vscode.WebviewViewProvider {
             });
           }
 
-          // ── start work tracking ──────────────────────────────────────
           const sessions = this._getSessions();
           const session = sessions.find(s => s.id === sessionId);
           const touchedFiles = new Set<string>(
@@ -512,30 +434,39 @@ export class ChatProvider implements vscode.WebviewViewProvider {
                 messages: [{ id: `user-${Date.now()}`, role: 'user', content: payload.text, createdAt: Date.now() }],
                 context: { ...(payload.context ?? { taskKind: 'chat' }), workspaceFiles },
                 modelId: payload.modelId ?? 'default',
-                systemExtra: this.getScheduledContext(),
+                systemExtra: this._scheduler.getScheduledContext(),
               } as ChatRequest
-            : { ...(payload as ChatRequest), context: { ...(payload as ChatRequest).context, workspaceFiles }, systemExtra: this.getScheduledContext() };
+            : { ...(payload as ChatRequest), context: { ...(payload as ChatRequest).context, workspaceFiles }, systemExtra: this._scheduler.getScheduledContext() };
 
           this._view?.webview.postMessage({ type: 'stream-start', conversationId: request.conversationId });
+
+          if (sessionId === TELEGRAM_SESSION_ID && this._telegram) {
+            const userText = request.messages?.at(-1)?.content ?? '';
+            if (userText) { void this._telegram.send(`👤 ${userText}`); }
+          }
 
           if (this.orchestrator) {
             try {
               let assembled = '';
+              const userText = request.messages?.at(-1)?.content ?? '';
               await this.orchestrator.streamChatResponse(request, delta => {
                 assembled += delta;
                 if (!signal.aborted) {
-                  // accumulate file paths mentioned in response
                   let m: RegExpExecArray | null;
                   FILE_PATH_RE.lastIndex = 0;
                   while ((m = FILE_PATH_RE.exec(delta)) !== null) {
                     this._activeWork?.files.add(m[1]);
                   }
-                  this._view?.webview.postMessage({ type: 'delta', delta });
+                  this._view?.webview.postMessage({ type: 'delta', delta, conversationId: request.conversationId });
                 }
               }, signal);
               if (!signal.aborted) {
                 await this._processAssembled(assembled, folder ?? '');
+                await this._appendDisplayPair(sessionId, userText, stripCmds(assembled) || assembled);
                 this._view?.webview.postMessage({ type: 'done', conversationId: request.conversationId });
+                if (sessionId === TELEGRAM_SESSION_ID && this._telegram && assembled) {
+                  await this._telegram.send(assembled);
+                }
               }
             } catch (e: any) {
               if (e?.name === 'AbortError' || signal.aborted) {
@@ -565,8 +496,7 @@ export class ChatProvider implements vscode.WebviewViewProvider {
           const sessions = this._getSessions();
           const num = sessions.length + 1;
           const newSession: StoredSession = { id: `s-${Date.now()}`, name: `Chat ${num}`, createdAt: Date.now() };
-          const updated = [...sessions, newSession];
-          await this._saveSessions(updated);
+          await this._saveSessions([...sessions, newSession]);
           await this._globalState.update(ACTIVE_SESSION_KEY, newSession.id);
           this._sendSessions();
           this._sendHistory(newSession.id);
@@ -575,8 +505,10 @@ export class ChatProvider implements vscode.WebviewViewProvider {
 
         case 'switch-session': {
           const sid = String(msg.sessionId ?? 'default');
-          await this._globalState.update(ACTIVE_SESSION_KEY, sid);
-          this._sendSessions();
+          if (sid !== TELEGRAM_SESSION_ID) {
+            await this._globalState.update(ACTIVE_SESSION_KEY, sid);
+            this._sendSessions();
+          }
           this._sendHistory(sid);
           break;
         }
@@ -590,8 +522,8 @@ export class ChatProvider implements vscode.WebviewViewProvider {
           const currentActive = this._globalState.get<string>(ACTIVE_SESSION_KEY, 'default');
           const nextActive = currentActive === sid ? sessions[sessions.length - 1].id : currentActive;
           await this._globalState.update(ACTIVE_SESSION_KEY, nextActive);
-          // clean up history for closed session
           await this.orchestrator?.clearHistory(sid);
+          await this._clearDisplayHistory(sid);
           this._sendSessions();
           if (currentActive === sid) { this._sendHistory(nextActive); }
           break;
@@ -641,55 +573,48 @@ export class ChatProvider implements vscode.WebviewViewProvider {
         case 'clear-history': {
           const cid = msg.conversationId ?? this._globalState.get<string>(ACTIVE_SESSION_KEY, 'default');
           await this.orchestrator?.clearHistory(cid);
+          await this._clearDisplayHistory(cid);
           break;
         }
 
         case 'schedule-prompt': {
-          const task: ScheduledTask = {
+          const task = {
             id: `task-${Date.now()}`,
             text: String(msg.text ?? ''),
             scheduledAt: Number(msg.scheduledAt),
           };
-          await this._saveTask(task);
-          this._armTask(task);
+          await this._scheduler.saveTask(task);
+          this._scheduler.armTask(task);
           break;
         }
 
-        case 'cancel-scheduled-task': {
-          await this._removeTask(String(msg.id ?? ''));
-          this._sendScheduledTasks();
+        case 'cancel-scheduled-task':
+          await this._scheduler.removeTask(String(msg.id ?? ''));
           break;
-        }
 
         case 'save-provider-key': {
-          const def = PROVIDER_DEFS.find(d => d.id === String(msg.providerId ?? ''));
-          if (!def || !msg.key) { break; }
-          const key = String(msg.key);
-          await this._secrets.store(def.secretKey, key);
-          this._softRemoved.delete(def.id);
-          await this._applyKey(def.id, key);
-          await this._sendProviders();
+          const pid = String(msg.providerId ?? '');
+          if (!pid || !msg.key) { break; }
+          await this._providers.saveKey(pid, String(msg.key));
+          await this._providers.sendProviders();
           this._sendModels();
           break;
         }
 
         case 'remove-provider-key': {
-          const def = PROVIDER_DEFS.find(d => d.id === String(msg.providerId ?? ''));
-          if (!def) { break; }
-          this._softRemoved.add(def.id);
-          if (this.orchestrator) { this.orchestrator.removeProvider(def.id); }
-          await this._sendProviders();
+          const pid = String(msg.providerId ?? '');
+          if (!pid) { break; }
+          this._providers.removeKey(pid);
+          await this._providers.sendProviders();
           this._sendModels();
           break;
         }
 
         case 'restore-provider-key': {
-          const def = PROVIDER_DEFS.find(d => d.id === String(msg.providerId ?? ''));
-          if (!def) { break; }
-          this._softRemoved.delete(def.id);
-          const key = await this._secrets.get(def.secretKey);
-          if (key) { await this._applyKey(def.id, key); }
-          await this._sendProviders();
+          const pid = String(msg.providerId ?? '');
+          if (!pid) { break; }
+          await this._providers.restoreKey(pid);
+          await this._providers.sendProviders();
           this._sendModels();
           break;
         }
@@ -697,13 +622,25 @@ export class ChatProvider implements vscode.WebviewViewProvider {
         case 'toggle-provider': {
           const pid = String(msg.providerId ?? '');
           if (!pid) { break; }
-          const disabled = new Set(this._globalState.get<string[]>(DISABLED_PROVIDERS_KEY, []));
-          if (disabled.has(pid)) { disabled.delete(pid); } else { disabled.add(pid); }
-          await this._globalState.update(DISABLED_PROVIDERS_KEY, [...disabled]);
+          await this._providers.toggleDisabled(pid);
           this._sendModels();
-          await this._sendProviders();
+          await this._providers.sendProviders();
           break;
         }
+
+        case 'save-telegram-config': {
+          const token = String(msg.token ?? '').trim();
+          const chatId = String(msg.chatId ?? '').trim();
+          if (token) { await this._secrets.store(TELEGRAM_TOKEN_KEY, token); }
+          if (chatId) { await this._globalState.update(TELEGRAM_CHAT_ID_KEY, chatId); }
+          await this._initTelegram();
+          await this._sendTelegramConfig();
+          break;
+        }
+
+        case 'restore-snapshot':
+          await this._restoreSnapshot(Number(msg.ts));
+          break;
 
         case 'save-custom-prompt': {
           const cfg = vscode.workspace.getConfiguration('kludge');
@@ -746,9 +683,4 @@ export class ChatProvider implements vscode.WebviewViewProvider {
     html = html.replace(/<script /g, `<script nonce="${nonce}" `);
     return html;
   }
-}
-
-function getNonce() {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-  return Array.from({ length: 32 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
 }

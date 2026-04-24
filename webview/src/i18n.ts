@@ -65,6 +65,16 @@ export interface I18n {
   providerRemove: string
   providerRestore: string
   providerPlaceholder: string
+  tgTabLabel: string
+  tgSettingsToggle: string
+  tgTokenLabel: string
+  tgChatIdLabel: string
+  tgSave: string
+  tgNotConfigured: string
+  tgTokenPlaceholder: string
+  tgChatIdPlaceholder: string
+  confirmClear: string
+  iconSearchPlaceholder: string
 }
 
 const en: I18n = {
@@ -134,6 +144,16 @@ const en: I18n = {
   providerRemove: 'Remove',
   providerRestore: '↩ Restore',
   providerPlaceholder: 'Paste API key…',
+  tgTabLabel: 'Telegram',
+  tgSettingsToggle: '⚙ Bot settings',
+  tgTokenLabel: 'Bot token',
+  tgChatIdLabel: 'Chat ID',
+  tgSave: 'Connect',
+  tgNotConfigured: 'Set up your Telegram bot to start chatting',
+  tgTokenPlaceholder: '1234567890:ABCdef…',
+  tgChatIdPlaceholder: '-1001234567890',
+  confirmClear: 'Clear chat history?',
+  iconSearchPlaceholder: '⬡ Search icons…',
 }
 
 const ru: I18n = {
@@ -203,6 +223,16 @@ const ru: I18n = {
   providerRemove: 'Убрать',
   providerRestore: '↩ Вернуть',
   providerPlaceholder: 'Вставь API-ключ…',
+  tgTabLabel: 'Telegram',
+  tgSettingsToggle: '⚙ Настройки бота',
+  tgTokenLabel: 'Токен бота',
+  tgChatIdLabel: 'Chat ID',
+  tgSave: 'Подключить',
+  tgNotConfigured: 'Настрой Telegram-бота чтобы начать общение',
+  tgTokenPlaceholder: '1234567890:ABCdef…',
+  tgChatIdPlaceholder: '-1001234567890',
+  confirmClear: 'Очистить историю чата?',
+  iconSearchPlaceholder: '⬡ Поиск иконок…',
 }
 
 const pt: I18n = {
@@ -272,6 +302,16 @@ const pt: I18n = {
   providerRemove: 'Remover',
   providerRestore: '↩ Restaurar',
   providerPlaceholder: 'Cole a chave API…',
+  tgTabLabel: 'Telegram',
+  tgSettingsToggle: '⚙ Config. do bot',
+  tgTokenLabel: 'Token do bot',
+  tgChatIdLabel: 'Chat ID',
+  tgSave: 'Conectar',
+  tgNotConfigured: 'Configure o bot do Telegram para começar a conversar',
+  tgTokenPlaceholder: '1234567890:ABCdef…',
+  tgChatIdPlaceholder: '-1001234567890',
+  confirmClear: 'Limpar histórico do chat?',
+  iconSearchPlaceholder: '⬡ Buscar ícones…',
 }
 
 export function getStrings(locale: string): I18n {

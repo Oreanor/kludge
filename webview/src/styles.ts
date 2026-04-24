@@ -63,6 +63,19 @@ export const styles: Record<string, React.CSSProperties> = {
     opacity: 0.7,
     marginBottom: 2,
   },
+  restoreBtn: {
+    position: 'absolute',
+    bottom: 4,
+    left: -22,
+    background: 'none',
+    border: 'none',
+    color: 'var(--vscode-button-foreground)',
+    opacity: 0.35,
+    cursor: 'pointer',
+    fontSize: 13,
+    padding: '0 2px',
+    lineHeight: 1,
+  },
   streaming: {
     opacity: 0.9,
   },
@@ -345,8 +358,11 @@ export const styles: Record<string, React.CSSProperties> = {
     padding: '0 0 0 2px',
     color: 'inherit',
   },
-  sessionTabAdd: {
+  sessionTabTelegram: {
     marginLeft: 'auto' as const,
+    color: '#29b6f6',
+  },
+  sessionTabAdd: {
     flexShrink: 0,
     background: 'none',
     border: 'none',
@@ -363,6 +379,39 @@ export const styles: Record<string, React.CSSProperties> = {
     color: 'var(--vscode-inputValidation-warningForeground)',
     borderTop: '1px solid var(--vscode-inputValidation-warningBorder)',
     userSelect: 'none' as const,
+  },
+  tgSettings: {
+    padding: '6px 8px',
+    borderBottom: '1px solid var(--vscode-panel-border)',
+    display: 'flex',
+    flexDirection: 'column' as const,
+    gap: 6,
+  },
+  tgSettingsForm: {
+    display: 'flex',
+    flexDirection: 'column' as const,
+    gap: 6,
+  },
+  tgFieldRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 6,
+  },
+  tgInput: {
+    flex: 1,
+    minWidth: 0,
+    background: 'var(--vscode-input-background)',
+    color: 'var(--vscode-input-foreground)',
+    border: '1px solid var(--vscode-input-border)',
+    borderRadius: 3,
+    padding: '3px 6px',
+    fontSize: 11,
+    fontFamily: 'inherit',
+  },
+  tgNotConfigured: {
+    fontSize: 11,
+    opacity: 0.6,
+    fontStyle: 'italic' as const,
   },
   noWorkspaceHint: {
     fontSize: 10,
